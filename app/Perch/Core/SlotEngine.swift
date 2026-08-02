@@ -449,7 +449,7 @@ final class SlotEngine {
     /// Serializes window-touching operations: overlapping saves/restores would move
     /// the same windows twice and interleave their reports, so later requests are
     /// rejected instead of queued (hotkey auto-repeat would otherwise pile up).
-    private func performExclusiveWindowOperation<T>(
+    private func performExclusiveWindowOperation<T: Sendable>(
         _ operation: () async throws -> T
     ) async throws -> T {
         guard !isPerformingWindowOperation else {
