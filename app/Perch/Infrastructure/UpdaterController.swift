@@ -4,7 +4,7 @@ import Sparkle
 /// Makes scheduled Sparkle alerts noticeable in this dockless menu-bar app.
 /// Sparkle keeps this delegate weakly, so UpdaterController owns it strongly.
 @MainActor
-private final class UpdateReminderDelegate: NSObject, @MainActor SPUStandardUserDriverDelegate {
+private final class UpdateReminderDelegate: NSObject, @preconcurrency SPUStandardUserDriverDelegate {
     private var previousActivationPolicy: NSApplication.ActivationPolicy?
 
     var supportsGentleScheduledUpdateReminders: Bool {
