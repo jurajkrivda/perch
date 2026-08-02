@@ -1,0 +1,88 @@
+name: Bug report
+description: Something in Perch doesn't work
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please read SUPPORT.md in the repository root first. It covers the four
+        most common reports: missing Accessibility permission, skipped
+        minimized/fullscreen windows, fuzzy matches, and automatic restore not
+        firing.
+
+  - type: checkboxes
+    id: checked
+    attributes:
+      label: Before reporting
+      options:
+        - label: Perch has Accessibility permission in System Settings
+          required: true
+        - label: I've read the "Before opening an issue" section of SUPPORT.md
+          required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, and what happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Save layout "Work" with two external displays
+        2. Sleep the Mac
+        3. Wake it
+        4. ...
+    validations:
+      required: true
+
+  - type: input
+    id: perch-version
+    attributes:
+      label: Perch version
+      placeholder: 0.2.0 (build 3)
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac model
+      placeholder: macOS 15.4, MacBook Pro M3
+    validations:
+      required: true
+
+  - type: dropdown
+    id: displays
+    attributes:
+      label: How are your displays connected?
+      options:
+        - Built-in display only
+        - Direct HDMI or DisplayPort
+        - USB-C / Thunderbolt dock
+        - DisplayLink adapter
+        - Clamshell (lid closed, external only)
+        - Other / mixed
+    validations:
+      required: true
+
+  - type: textarea
+    id: report
+    attributes:
+      label: Restore report
+      description: >
+        If a window landed in the wrong place, open the restore report from the
+        menu bar and paste the relevant lines. It shows which rule matched each
+        window.
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics export
+      description: >
+        Settings → About → Export Diagnostics. It contains no window titles
+        and no layout names.

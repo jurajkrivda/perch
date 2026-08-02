@@ -1,0 +1,35 @@
+name: Feature request
+description: Suggest something Perch could do
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Perch is a spare-time project with a deliberately narrow scope. The
+        README lists what it will not do — Spaces support, tiling, per-app
+        rules, and scripting are all out of scope and requests for them will be
+        closed.
+
+        A pull request is far more likely to get something done than an issue.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the situation, not the solution you have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: today
+    attributes:
+      label: How do you handle it today?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I'd be willing to implement this myself

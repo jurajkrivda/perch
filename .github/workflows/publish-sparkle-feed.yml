@@ -1,0 +1,270 @@
+name: Publish Sparkle feed
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build-feed:
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Download published releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p pages/updates
+          gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
+            > "$RUNNER_TEMP/perch-release-tags.txt"
+
+          if [[ ! -s "$RUNNER_TEMP/perch-release-tags.txt" ]]; then
+            echo "error: no published Perch releases found" >&2
+            exit 1
+          fi
+
+          while IFS= read -r tag; do
+            if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "error: published release tag is not v<major>.<minor>.<patch>: $tag" >&2
+              exit 1
+            fi
+
+            gh release verify "$tag" > /dev/null
+
+            asset_count="$(gh release view "$tag" --json assets --jq '.assets | length')"
+            asset_name="$(gh release view "$tag" --json assets --jq '.assets[0].name // ""')"
+            if [[ "$asset_count" != "1" || "$asset_name" != "Perch.dmg" ]]; then
+              echo "error: $tag must contain exactly one release asset named Perch.dmg" >&2
+              exit 1
+            fi
+
+            version="${tag#v}"
+            archive="pages/updates/Perch-${version}.dmg"
+            gh release download "$tag" --pattern Perch.dmg --output "$archive"
+            gh release verify-asset "$tag" "$archive" > /dev/null
+            gh release view "$tag" --json body --jq .body > "${archive%.dmg}.md"
+          done < "$RUNNER_TEMP/perch-release-tags.txt"
+
+      - name: Verify published DMGs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mount_device=""
+          mount_dir=""
+          : > "$RUNNER_TEMP/perch-release-builds.tsv"
+
+          cleanup_mount() {
+            if [[ -n "$mount_device" ]]; then
+              hdiutil detach "$mount_device" -quiet || true
+            fi
+            if [[ -n "$mount_dir" && -d "$mount_dir" ]]; then
+              rm -rf "$mount_dir"
+            fi
+          }
+          trap cleanup_mount EXIT
+
+          while IFS= read -r tag; do
+            version="${tag#v}"
+            archive="pages/updates/Perch-${version}.dmg"
+            expected_dir="$RUNNER_TEMP/perch-expected-${version}"
+            mkdir -p "$expected_dir"
+
+            if ! git rev-parse --verify --quiet "${tag}^{commit}" > /dev/null; then
+              echo "error: published release tag is missing from git history: $tag" >&2
+              exit 1
+            fi
+
+            sparkle_license_paths="$(
+              git ls-tree -r --name-only "$tag" -- \
+                app/Perch/Resources/ThirdPartyLicenses |
+                awk '/^app\/Perch\/Resources\/ThirdPartyLicenses\/Sparkle-[0-9]+\.[0-9]+\.[0-9]+-LICENSE\.txt$/ { print }'
+            )"
+            sparkle_license_count="$(
+              printf '%s\n' "$sparkle_license_paths" |
+                awk 'NF { count++ } END { print count + 0 }'
+            )"
+            if [[ "$sparkle_license_count" != "1" ]]; then
+              echo "error: $tag must contain exactly one versioned Sparkle license" >&2
+              exit 1
+            fi
+            sparkle_license_path="$(printf '%s\n' "$sparkle_license_paths" | awk 'NF { print; exit }')"
+            sparkle_license_name="${sparkle_license_path##*/}"
+
+            git show "${tag}:LICENSE" > "$expected_dir/LICENSE"
+            git show "${tag}:NOTICE" > "$expected_dir/NOTICE"
+            git show "${tag}:${sparkle_license_path}" > \
+              "$expected_dir/$sparkle_license_name"
+
+            mount_dir="$(mktemp -d)"
+            mount_device="$(
+              hdiutil attach "$archive" -mountpoint "$mount_dir" \
+                -nobrowse -readonly -noverify -noautoopen |
+                awk '/Apple_HFS|Apple_APFS/ { print $1; exit }'
+            )"
+
+            if [[ -z "$mount_device" || ! -d "$mount_dir/Perch.app" ]]; then
+              echo "error: $tag does not contain Perch.app" >&2
+              exit 1
+            fi
+
+            if [[ ! -L "$mount_dir/Applications" || \
+                  ! -f "$mount_dir/LICENSE" || \
+                  ! -f "$mount_dir/NOTICE" ]]; then
+              echo "error: $tag is missing Applications, LICENSE, or NOTICE" >&2
+              exit 1
+            fi
+
+            cmp "$mount_dir/LICENSE" "$expected_dir/LICENSE"
+            cmp "$mount_dir/NOTICE" "$expected_dir/NOTICE"
+            cmp \
+              "$mount_dir/Perch.app/Contents/Resources/$sparkle_license_name" \
+              "$expected_dir/$sparkle_license_name"
+
+            bundle_version="$(
+              /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+                "$mount_dir/Perch.app/Contents/Info.plist"
+            )"
+            if [[ "$bundle_version" != "$version" ]]; then
+              echo "error: $tag contains app version $bundle_version" >&2
+              exit 1
+            fi
+
+            bundle_build="$(
+              /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
+                "$mount_dir/Perch.app/Contents/Info.plist"
+            )"
+            if [[ ! "$bundle_build" =~ ^[0-9]+$ ]]; then
+              echo "error: $tag contains a non-numeric build number: $bundle_build" >&2
+              exit 1
+            fi
+            printf '%s\t%s\n' "$version" "$bundle_build" >> \
+              "$RUNNER_TEMP/perch-release-builds.tsv"
+
+            codesign --verify --deep --strict "$mount_dir/Perch.app"
+            xcrun stapler validate "$archive"
+            spctl -a -vv -t open --context context:primary-signature "$archive"
+
+            hdiutil detach "$mount_device" -quiet
+            mount_device=""
+            rm -rf "$mount_dir"
+            mount_dir=""
+          done < "$RUNNER_TEMP/perch-release-tags.txt"
+
+          python3 - "$RUNNER_TEMP/perch-release-builds.tsv" <<'PY'
+          import sys
+
+          builds = []
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              for line in handle:
+                  version, build = line.rstrip("\n").split("\t")
+                  builds.append((tuple(map(int, version.split("."))), int(build), version))
+
+          previous_build = -1
+          previous_version = None
+          for _, build, version in sorted(builds):
+              if build <= previous_build:
+                  raise SystemExit(
+                      "error: CFBundleVersion must increase with every release; "
+                      f"{version} has build {build} after {previous_version} "
+                      f"with build {previous_build}"
+                  )
+              previous_build = build
+              previous_version = version
+          PY
+
+      - name: Install verified Sparkle tools
+        id: sparkle-tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          tools_dir="$(./app/script/sparkle_tools.sh)"
+          echo "directory=$tools_dir" >> "$GITHUB_OUTPUT"
+
+      - name: Generate signed appcast
+        shell: bash
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SPARKLE_PRIVATE_KEY" ]]; then
+            echo "error: repository secret SPARKLE_PRIVATE_KEY is not configured" >&2
+            exit 1
+          fi
+
+          printf '%s' "$SPARKLE_PRIVATE_KEY" | "${{ steps.sparkle-tools.outputs.directory }}/bin/generate_appcast" \
+            --ed-key-file - \
+            --download-url-prefix https://jurajkrivda.github.io/perch/updates/ \
+            --embed-release-notes \
+            --maximum-versions 0 \
+            --maximum-deltas 0 \
+            -o pages/appcast.xml \
+            pages/updates
+
+          while IFS= read -r tag; do
+            version="${tag#v}"
+            pages_url="https://jurajkrivda.github.io/perch/updates/Perch-${version}.dmg"
+            release_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/Perch.dmg"
+            PAGES_URL="$pages_url" RELEASE_URL="$release_url" perl -0pi -e \
+              's/\Q$ENV{PAGES_URL}\E/$ENV{RELEASE_URL}/g' pages/appcast.xml
+
+            if ! grep -Fq "$release_url" pages/appcast.xml; then
+              echo "error: appcast is missing the GitHub Release URL for $tag" >&2
+              exit 1
+            fi
+          done < "$RUNNER_TEMP/perch-release-tags.txt"
+
+          if grep -Fq 'jurajkrivda.github.io/perch/updates/' pages/appcast.xml; then
+            echo "error: appcast still contains a temporary Pages download URL" >&2
+            exit 1
+          fi
+
+          rm -rf pages/updates
+
+      - name: Add technical redirect
+        shell: bash
+        run: |
+          cat > pages/index.html <<'HTML'
+          <!doctype html>
+          <meta charset="utf-8">
+          <meta http-equiv="refresh" content="0; url=https://github.com/jurajkrivda/perch">
+          <title>Perch updates</title>
+          <p>Perch lives on <a href="https://github.com/jurajkrivda/perch">GitHub</a>.</p>
+          HTML
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: pages
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build-feed
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
