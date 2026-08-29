@@ -64,9 +64,11 @@
 		B710574F7049856CEA2BC131 /* WindowSnapshotterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 919BDF4D99633627496747F6 /* WindowSnapshotterTests.swift */; };
 		BB173CD6FA821E9816E1595B /* AppLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4254AEAD7451162B3584E98 /* AppLanguage.swift */; };
 		BCA3BB2E4DEDFE59E57E0B90 /* DisplayTopologyFingerprintTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94ECA886CAA73294BF6C61F7 /* DisplayTopologyFingerprintTests.swift */; };
+		C1200A6548824826F1684C75 /* OverlayWindowPlacementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8AA16E302266A232AA26955 /* OverlayWindowPlacementTests.swift */; };
 		C1F1DCC1A3D17AF8B2C49F20 /* AutoRestorePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 856E9F0D45ADCC1BD2B4DF02 /* AutoRestorePolicy.swift */; };
 		C627DAFE32CDB3FC4ED2A4CF /* LocalizedErrorMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45F9CD4B3F0A1C64107B6BFB /* LocalizedErrorMessages.swift */; };
 		C62A2C687E39432EDB6D9ED7 /* EnvironmentChangeObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F6E266F8BB1AE29E1DF592 /* EnvironmentChangeObserver.swift */; };
+		C74B6E180E0787A2689EDFB5 /* OverlayWindowPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14E211FFAFFE55984083CD79 /* OverlayWindowPlacement.swift */; };
 		C90C54DECED689D758606158 /* SlotEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F66A23BB0E6596FBFF8C9F1 /* SlotEngine.swift */; };
 		CA74CEE828D7A3E5EF1879FC /* Logger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54D1EFBA90598A4236005420 /* Logger.swift */; };
 		CEB0238E8C6357287CF90136 /* Slot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31BFE59C775377D733C6D15A /* Slot.swift */; };
@@ -86,6 +88,7 @@
 		EC57224AD2C9EA7620EF9C0B /* DisplayStabilizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22509821E813CD2C24D95626 /* DisplayStabilizer.swift */; };
 		F29D9E73F33D2E72FEE93946 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1BE72FB3D6E204849876318 /* HotkeyManager.swift */; };
 		F5EDD8CCDDD576C2FB41715C /* LaunchAtLogin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C261CCBD5806F97CADB5C57 /* LaunchAtLogin.swift */; };
+		F7AC8DCC8F788EFC86CD9AA6 /* OverlayWindowPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14E211FFAFFE55984083CD79 /* OverlayWindowPlacement.swift */; };
 		F7C2A871A5D7DADBB8031D2E /* LocalizationKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D4509547FD6112260DD7AC4 /* LocalizationKey.swift */; };
 		F9AFEECE262C4BA9824762FD /* LegacyLicensingDataCleanerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA2AC692DDD9F8ED4C7C4C21 /* LegacyLicensingDataCleanerTests.swift */; };
 		FB9CE8FA98B6DD7885AB6600 /* LayoutsSettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB01EF1E547A10C56A4914B6 /* LayoutsSettingsTab.swift */; };
@@ -98,6 +101,7 @@
 		0EF587123A9B58B1BCCF0C57 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
 		1281FE67A2458BCCDF40D8AA /* SettingsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsModel.swift; sourceTree = "<group>"; };
 		13DBEED4279CEFA8443B0D26 /* WindowMoverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowMoverTests.swift; sourceTree = "<group>"; };
+		14E211FFAFFE55984083CD79 /* OverlayWindowPlacement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayWindowPlacement.swift; sourceTree = "<group>"; };
 		193B2906D32BF20F278BC0AC /* AutoRestoreAttemptState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoRestoreAttemptState.swift; sourceTree = "<group>"; };
 		194D1481D5F9952B0DD1D236 /* Sparkle-2.9.5-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Sparkle-2.9.5-LICENSE.txt"; sourceTree = "<group>"; };
 		1A64C996F8669F93DEC16994 /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
@@ -134,6 +138,7 @@
 		95F75FA0CACA4D59A2869305 /* AutoRestorePolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoRestorePolicyTests.swift; sourceTree = "<group>"; };
 		9963A9D81BE02ACAAF076108 /* SettingsTaskStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTaskStateTests.swift; sourceTree = "<group>"; };
 		99F6E266F8BB1AE29E1DF592 /* EnvironmentChangeObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnvironmentChangeObserver.swift; sourceTree = "<group>"; };
+		A8AA16E302266A232AA26955 /* OverlayWindowPlacementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayWindowPlacementTests.swift; sourceTree = "<group>"; };
 		A8FEB8A1AEBD4A3546F97BED /* PerchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerchApp.swift; sourceTree = "<group>"; };
 		B3847E65D52E837E62864F05 /* DiagnosticsExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsExporter.swift; sourceTree = "<group>"; };
 		B9C11CB6F201B9372EA0827B /* PerchTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PerchTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -248,6 +253,7 @@
 				8046546BE5BA4B665E1D6AD3 /* DisplayManager.swift */,
 				22509821E813CD2C24D95626 /* DisplayStabilizer.swift */,
 				99F6E266F8BB1AE29E1DF592 /* EnvironmentChangeObserver.swift */,
+				14E211FFAFFE55984083CD79 /* OverlayWindowPlacement.swift */,
 				1F66A23BB0E6596FBFF8C9F1 /* SlotEngine.swift */,
 				BDC90B258C27972E8D543DCC /* WindowMover.swift */,
 				5E8396661817C2C00CF98848 /* WindowSnapshotter.swift */,
@@ -267,6 +273,7 @@
 				C0A21FADF822B717B35C52C1 /* LaunchAtLoginTests.swift */,
 				CA2AC692DDD9F8ED4C7C4C21 /* LegacyLicensingDataCleanerTests.swift */,
 				56AD77348524B7D5E59F5E3F /* LocalizationTests.swift */,
+				A8AA16E302266A232AA26955 /* OverlayWindowPlacementTests.swift */,
 				9963A9D81BE02ACAAF076108 /* SettingsTaskStateTests.swift */,
 				052B955B4753A44D0F6780AF /* SlotStoreTests.swift */,
 				CE7AC05AE55EBF799D74D0A4 /* WindowGeometryTests.swift */,
@@ -443,6 +450,8 @@
 				718FB609052218B059D9E66F /* LocalizationTests.swift in Sources */,
 				C627DAFE32CDB3FC4ED2A4CF /* LocalizedErrorMessages.swift in Sources */,
 				8538485256A8AE566E9D5125 /* Logger.swift in Sources */,
+				F7AC8DCC8F788EFC86CD9AA6 /* OverlayWindowPlacement.swift in Sources */,
+				C1200A6548824826F1684C75 /* OverlayWindowPlacementTests.swift in Sources */,
 				6931A70BE6F53777C0201DC4 /* SettingsTaskState.swift in Sources */,
 				D6346E4F7A15FC21AB388DAC /* SettingsTaskStateTests.swift in Sources */,
 				63F2978096564333E17BFB4B /* Slot.swift in Sources */,
@@ -489,6 +498,7 @@
 				A4C32E02D82DAD8671DACD3E /* LocalizedErrorMessages.swift in Sources */,
 				CA74CEE828D7A3E5EF1879FC /* Logger.swift in Sources */,
 				3D95DE75A148D38259EEA466 /* MenuBarController.swift in Sources */,
+				C74B6E180E0787A2689EDFB5 /* OverlayWindowPlacement.swift in Sources */,
 				6FB486DF2AA9F2C06344CEDB /* PerchApp.swift in Sources */,
 				0C85BE9F835F250E800C8F5F /* RestorePromptWindow.swift in Sources */,
 				14B37C68BA38877AA2786C61 /* SettingsModel.swift in Sources */,

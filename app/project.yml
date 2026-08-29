@@ -65,6 +65,7 @@ targets:
       - path: Perch/Core/AutoRestorePolicy.swift
       - path: Perch/Core/DisplayManager.swift
       - path: Perch/Core/DisplayStabilizer.swift
+      - path: Perch/Core/OverlayWindowPlacement.swift
       - path: Perch/Core/SlotEngine.swift
       - path: Perch/Core/CGRectExtensions.swift
       - path: Perch/Core/WindowMover.swift

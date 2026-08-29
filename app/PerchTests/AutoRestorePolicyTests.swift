@@ -118,6 +118,32 @@ final class AutoRestorePolicyTests: XCTestCase {
         )
     }
 
+    func testReplacementDecisionKeepsWakeOpportunityForUnchangedTopology() {
+        let topology = makeTopology(uuid: "current")
+        var context = AutoRestoreDecisionContextState()
+        _ = context.begin(
+            generation: 1,
+            reason: .systemWake,
+            triggerStartedAt: Date(timeIntervalSince1970: 10)
+        )
+        let replacement = context.begin(
+            generation: 2,
+            reason: .displayReconfiguration,
+            triggerStartedAt: Date(timeIntervalSince1970: 20)
+        )
+        let input = makeInput(
+            trigger: replacement.reason,
+            currentTopology: topology,
+            topologyAtLastDecision: topology,
+            slots: [makeSlot(id: "work", name: "Work", topology: topology)]
+        )
+
+        XCTAssertEqual(
+            AutoRestorePolicy.decide(input),
+            .prompt(layoutID: "work", layoutName: "Work")
+        )
+    }
+
     func testWakeWhileLockedIsDeferredIntoFirstVisibleBurst() {
         var accumulator = EnvironmentChangeReasonAccumulator()
 

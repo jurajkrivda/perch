@@ -164,3 +164,65 @@ struct AutoRestoreTaskTokenState: Equatable, Sendable {
         currentToken = nil
     }
 }
+
+/// Retains the semantic trigger while one automatic-restore decision is still
+/// unresolved. A late display callback may begin a replacement generation
+/// while the previous decision is suspended on disk I/O; wake intent and the
+/// earliest interaction timestamp must survive that replacement.
+struct AutoRestoreDecisionContextState: Sendable {
+    struct Context: Sendable {
+        let generation: Int
+        let reason: EnvironmentChangeReason
+        let triggerStartedAt: Date
+    }
+
+    private(set) var context: Context?
+    private var deferredWakeReason: EnvironmentChangeReason?
+
+    @discardableResult
+    mutating func begin(
+        generation: Int,
+        reason: EnvironmentChangeReason,
+        triggerStartedAt: Date
+    ) -> Context {
+        var effectiveReason = reason
+        var effectiveStartedAt = triggerStartedAt
+
+        if let context {
+            effectiveReason = context.reason.coalesced(with: effectiveReason)
+            effectiveStartedAt = min(context.triggerStartedAt, effectiveStartedAt)
+        } else if let deferredWakeReason {
+            effectiveReason = deferredWakeReason.coalesced(with: effectiveReason)
+        }
+
+        deferredWakeReason = nil
+        let nextContext = Context(
+            generation: generation,
+            reason: effectiveReason,
+            triggerStartedAt: effectiveStartedAt
+        )
+        context = nextContext
+        return nextContext
+    }
+
+    mutating func finish(
+        generation: Int,
+        hasPendingAttempt: Bool = false
+    ) {
+        guard context?.generation == generation else { return }
+        guard !hasPendingAttempt else { return }
+        context = nil
+    }
+
+    mutating func sessionBecameHidden() {
+        if let reason = context?.reason, reason.isWake {
+            deferredWakeReason = reason
+        }
+        context = nil
+    }
+
+    mutating func reset() {
+        context = nil
+        deferredWakeReason = nil
+    }
+}

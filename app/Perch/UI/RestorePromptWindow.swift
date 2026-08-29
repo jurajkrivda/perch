@@ -52,6 +52,7 @@ final class RestorePromptWindow: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
+    @discardableResult
     static func show(
         layoutName: String,
         shortcutDescription: String?,
@@ -59,9 +60,7 @@ final class RestorePromptWindow: NSPanel {
         onConfirm: @escaping @MainActor () -> Void,
         onDismiss: @escaping @MainActor () -> Void,
         onSupersededByRestore: @escaping @MainActor () -> Void
-    ) {
-        currentPrompt?.dismiss(animated: false, notifyDismissal: true)
-
+    ) -> Bool {
         let prompt = RestorePromptWindow(
             layoutName: layoutName,
             shortcutDescription: shortcutDescription,
@@ -69,12 +68,22 @@ final class RestorePromptWindow: NSPanel {
             onDismiss: onDismiss,
             onSupersededByRestore: onSupersededByRestore
         )
+
+        guard prompt.positionOnBestScreen() else {
+            return false
+        }
+
+        currentPrompt?.dismiss(animated: false, notifyDismissal: true)
         currentPrompt = prompt
         prompt.present(duration: duration)
+        return true
     }
 
-    static func dismissCurrent() {
-        currentPrompt?.dismiss(animated: true, notifyDismissal: true)
+    /// Removes an offer because its environment is no longer valid. The
+    /// coordinator owns the state rollback, so this must not look like a user
+    /// dismissal and make the old offer terminal.
+    static func invalidateCurrent() {
+        currentPrompt?.dismiss(animated: false, notifyDismissal: false)
     }
 
     /// Used when a restore action itself supersedes the prompt (including the
@@ -232,7 +241,6 @@ final class RestorePromptWindow: NSPanel {
 
     private func present(duration: TimeInterval) {
         dismissDuration = max(duration, 0)
-        positionOnBestScreen()
         alphaValue = 0
         orderFrontRegardless()
 
@@ -316,14 +324,32 @@ final class RestorePromptWindow: NSPanel {
         }
     }
 
-    private func positionOnBestScreen() {
-        let targetScreen = screen ?? NSApp.keyWindow?.screen ?? NSScreen.main
-        guard let visibleFrame = targetScreen?.visibleFrame else { return }
+    @discardableResult
+    private func positionOnBestScreen() -> Bool {
+        let screens = NSScreen.screens
+        let keyScreen = NSApp.keyWindow?.screen
+        let mainScreen = NSScreen.main
+        let geometries = screens.map { candidate in
+            OverlayScreenGeometry(
+                frame: candidate.frame,
+                visibleFrame: candidate.visibleFrame,
+                isKey: candidate === keyScreen,
+                isMain: candidate === mainScreen
+            )
+        }
+        guard let targetIndex = OverlayWindowPlacement.targetScreenIndex(
+            mouseLocation: NSEvent.mouseLocation,
+            screens: geometries
+        ) else {
+            return false
+        }
 
-        let origin = NSPoint(
-            x: visibleFrame.midX - frame.width / 2,
-            y: visibleFrame.maxY - frame.height - 72
+        let origin = OverlayWindowPlacement.topCenterOrigin(
+            windowSize: frame.size,
+            visibleFrame: screens[targetIndex].visibleFrame,
+            topInset: 72
         )
         setFrameOrigin(origin)
+        return true
     }
 }

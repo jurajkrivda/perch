@@ -27,6 +27,25 @@ private final class EnvironmentObserverTokenStore {
     }
 }
 
+private enum SystemSessionVisibility {
+    /// Core Graphics exposes no typed constant for this session-dictionary key.
+    /// It is present with a true value while the secure screen is locked and
+    /// absent on an unlocked session, so absence deliberately means false.
+    private static let screenLockedKey = "CGSSessionScreenIsLocked"
+
+    static func current() -> Bool? {
+        guard let sessionDictionary = CGSessionCopyCurrentDictionary() else {
+            return nil
+        }
+
+        let session = sessionDictionary as NSDictionary
+        let isOnConsole = session[kCGSessionOnConsoleKey] as? Bool ?? true
+        let loginIsComplete = session[kCGSessionLoginDoneKey] as? Bool ?? true
+        let screenIsLocked = session[screenLockedKey] as? Bool ?? false
+        return isOnConsole && loginIsComplete && !screenIsLocked
+    }
+}
+
 /// Coalesces wake, unlock, and display-change signals into one callback after
 /// the display environment and macOS window relocation have settled.
 @MainActor
@@ -39,6 +58,8 @@ final class EnvironmentChangeObserver {
     private static let quietPeriod: TimeInterval = 2
     private static let relocationGracePeriod: TimeInterval = 1.5
     private static let defaultSettleTimeout: TimeInterval = 10
+    private static let visibilityConfirmationAttempts = 10
+    private static let visibilityConfirmationDelayNanoseconds: UInt64 = 200_000_000
 
     private let settleTimeoutProvider: SettleTimeoutProvider
     private let onTriggered: TriggeredHandler
@@ -47,6 +68,7 @@ final class EnvironmentChangeObserver {
 
     private let observerTokens = EnvironmentObserverTokenStore()
     private var settleTask: Task<Void, Never>?
+    private var visibilityConfirmationTask: Task<Void, Never>?
     private var reasonAccumulator = EnvironmentChangeReasonAccumulator()
     private var isSessionVisible = true
     private var isStarted = false
@@ -65,6 +87,7 @@ final class EnvironmentChangeObserver {
 
     deinit {
         settleTask?.cancel()
+        visibilityConfirmationTask?.cancel()
     }
 
     func start() {
@@ -104,8 +127,7 @@ final class EnvironmentChangeObserver {
                 queue: .main
             ) { [weak self] _ in
                 Task { @MainActor [weak self] in
-                    self?.sessionVisibilityDidChange(isVisible: true)
-                    self?.environmentDidChange(reason: .sessionActive)
+                    self?.confirmVisibleSession(reason: .sessionActive)
                 }
             },
             workspaceCenter.addObserver(
@@ -152,8 +174,7 @@ final class EnvironmentChangeObserver {
                 queue: .main
             ) { [weak self] _ in
                 Task { @MainActor [weak self] in
-                    self?.sessionVisibilityDidChange(isVisible: true)
-                    self?.environmentDidChange(reason: .screenUnlock)
+                    self?.confirmVisibleSession(reason: .screenUnlock)
                 }
             },
             distributedCenter.addObserver(
@@ -167,6 +188,8 @@ final class EnvironmentChangeObserver {
             }
         ]
 
+        refreshSessionVisibilityFromSystem()
+
         AppLog.display.info("Started environment change observer")
     }
 
@@ -178,6 +201,8 @@ final class EnvironmentChangeObserver {
         isStarted = false
         settleTask?.cancel()
         settleTask = nil
+        visibilityConfirmationTask?.cancel()
+        visibilityConfirmationTask = nil
         reasonAccumulator.reset()
 
         observerTokens.removeAll()
@@ -188,6 +213,13 @@ final class EnvironmentChangeObserver {
     private func environmentDidChange(reason: EnvironmentChangeReason) {
         guard isStarted else {
             return
+        }
+
+        // Lock notifications can be delivered before this observer starts or
+        // race a wake callback. Re-read the current session before processing
+        // wake/display work so an offer cannot expire behind the secure UI.
+        if reason.isWake || reason == .displayReconfiguration {
+            refreshSessionVisibilityFromSystem()
         }
 
         AppLog.display.info("Environment change triggered: \(reason.rawValue, privacy: .public)")
@@ -241,7 +273,8 @@ final class EnvironmentChangeObserver {
 
             guard !Task.isCancelled,
                   let self,
-                  self.isStarted
+                  self.isStarted,
+                  self.isSessionVisible
             else {
                 return
             }
@@ -252,7 +285,15 @@ final class EnvironmentChangeObserver {
         }
     }
 
-    private func sessionVisibilityDidChange(isVisible: Bool) {
+    private func sessionVisibilityDidChange(
+        isVisible: Bool,
+        cancelVisibilityConfirmation: Bool = true
+    ) {
+        if !isVisible, cancelVisibilityConfirmation {
+            visibilityConfirmationTask?.cancel()
+            visibilityConfirmationTask = nil
+        }
+        guard self.isSessionVisible != isVisible else { return }
         isSessionVisible = isVisible
         if !isVisible {
             reasonAccumulator.sessionBecameHidden()
@@ -261,5 +302,54 @@ final class EnvironmentChangeObserver {
         }
         AppLog.display.info("Session visibility changed: visible=\(isVisible)")
         onSessionVisibilityChanged(isVisible)
+    }
+
+    private func refreshSessionVisibilityFromSystem() {
+        guard let isVisible = SystemSessionVisibility.current() else { return }
+        sessionVisibilityDidChange(isVisible: isVisible)
+    }
+
+    private func confirmVisibleSession(reason: EnvironmentChangeReason) {
+        visibilityConfirmationTask?.cancel()
+        visibilityConfirmationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            for attempt in 0..<Self.visibilityConfirmationAttempts {
+                guard self.isStarted, !Task.isCancelled else { return }
+
+                if SystemSessionVisibility.current() == true {
+                    self.visibilityConfirmationTask = nil
+                    self.sessionVisibilityDidChange(isVisible: true)
+                    self.environmentDidChange(reason: reason)
+                    return
+                }
+
+                // A locked or temporarily unavailable session dictionary is
+                // not positive confirmation. Synchronize to hidden so an
+                // existing settle or prompt cannot expire behind the secure UI,
+                // but keep this bounded confirmation task alive for a real
+                // unlock whose dictionary update is still catching up.
+                self.sessionVisibilityDidChange(
+                    isVisible: false,
+                    cancelVisibilityConfirmation: false
+                )
+
+                guard attempt + 1 < Self.visibilityConfirmationAttempts else {
+                    break
+                }
+                do {
+                    try await Task.sleep(
+                        nanoseconds: Self.visibilityConfirmationDelayNanoseconds
+                    )
+                } catch {
+                    return
+                }
+            }
+
+            self.visibilityConfirmationTask = nil
+            AppLog.display.debug(
+                "Ignored visible-session notification while the secure screen remained locked"
+            )
+        }
     }
 }
