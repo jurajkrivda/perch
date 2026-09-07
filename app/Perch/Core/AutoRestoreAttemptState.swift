@@ -167,13 +167,12 @@ struct AutoRestoreTaskTokenState: Equatable, Sendable {
 
 /// Retains the semantic trigger while one automatic-restore decision is still
 /// unresolved. A late display callback may begin a replacement generation
-/// while the previous decision is suspended on disk I/O; wake intent and the
-/// earliest interaction timestamp must survive that replacement.
+/// while the previous decision is suspended on disk I/O; the original trigger
+/// must survive that replacement.
 struct AutoRestoreDecisionContextState: Sendable {
     struct Context: Sendable {
         let generation: Int
         let reason: EnvironmentChangeReason
-        let triggerStartedAt: Date
     }
 
     private(set) var context: Context?
@@ -182,15 +181,12 @@ struct AutoRestoreDecisionContextState: Sendable {
     @discardableResult
     mutating func begin(
         generation: Int,
-        reason: EnvironmentChangeReason,
-        triggerStartedAt: Date
+        reason: EnvironmentChangeReason
     ) -> Context {
         var effectiveReason = reason
-        var effectiveStartedAt = triggerStartedAt
 
         if let context {
             effectiveReason = context.reason.coalesced(with: effectiveReason)
-            effectiveStartedAt = min(context.triggerStartedAt, effectiveStartedAt)
         } else if let deferredWakeReason {
             effectiveReason = deferredWakeReason.coalesced(with: effectiveReason)
         }
@@ -198,8 +194,7 @@ struct AutoRestoreDecisionContextState: Sendable {
         deferredWakeReason = nil
         let nextContext = Context(
             generation: generation,
-            reason: effectiveReason,
-            triggerStartedAt: effectiveStartedAt
+            reason: effectiveReason
         )
         context = nextContext
         return nextContext
@@ -215,7 +210,7 @@ struct AutoRestoreDecisionContextState: Sendable {
     }
 
     mutating func sessionBecameHidden() {
-        if let reason = context?.reason, reason.isWake {
+        if let reason = context?.reason, reason.requiresRestoreEvaluation {
             deferredWakeReason = reason
         }
         context = nil

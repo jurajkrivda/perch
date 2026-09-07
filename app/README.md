@@ -14,7 +14,7 @@ The app runs as a menu-bar utility. It saves visible windows into named layouts,
 - visible-window capture and display UUID mapping
 - layout persistence in Application Support
 - user-managed layouts with restore shortcuts
-- optional prompt-based or automatic restore after wake and display changes
+- optional prompt-based or automatic restore at startup, after wake and display changes
 - launch-at-login and menu bar label preferences
 - AX-based restore with title matching and retry verification
 - runtime UI language switching (Czech, Slovak, English, Spanish, German)
@@ -27,7 +27,21 @@ Perch appears in the macOS menu bar as `Perch`.
 - Restore layout 1-9 by order: `Command` + `Option` + `1...9`
 - Custom restore shortcuts can be recorded per layout in Settings.
 
-Settings also let you create, rename, and delete layouts, toggle launch at login, and hide the `Perch` text label so only the menu bar icon remains.
+Use **Save Current Layout** to name and capture the windows that are open now.
+Settings show each layout's save time, a display/window preview, and a preferred
+layout for each display arrangement. Without a preference, automatic restore
+chooses the most recently saved usable match.
+
+**Restore Progress and Results** shows individual window outcomes and lets you
+stop remaining work, retry unfinished windows, open a closed app for one attempt,
+or assign a different open window to a saved position. **Undo Last Restore**
+returns the same live windows to their original positions on the same displays;
+it is available until another full restore or app restart.
+
+**Saved Versions** keeps ten previous versions per layout, one hundred in total,
+on this Mac. Recovering a version changes saved data without moving windows.
+Deleted layouts can also be recovered there. Settings also control launch at login
+and whether the menu bar shows the `Perch` text label.
 
 The first save or restore requires Accessibility permission. Use the Perch menu item `Grant Accessibility Permission...` if macOS has not granted it yet.
 
@@ -44,6 +58,10 @@ Build and launch the app:
 ```bash
 ./script/build_and_run.sh
 ```
+
+Use `./script/build_and_run.sh --build-only` to prepare a debug app without
+launching it. The script no longer terminates an existing Perch process; quit
+that process when you are ready to run the debug build.
 
 Build a signed release app and zip:
 
@@ -72,6 +90,10 @@ xcodebuild test -project Perch.xcodeproj -scheme PerchModelTests -destination 'p
 ```
 
 ## Project Shape
+
+See [architecture](docs/architecture.md) for responsibilities and concurrency,
+and [automatic restore](docs/auto-restore-brief.md) for the behavior contract.
+Run `python3 script/check_repository.py` before submitting changes.
 
 ```text
 Perch/

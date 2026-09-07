@@ -59,8 +59,7 @@ final class AutoRestorePolicyTests: XCTestCase {
             trigger: .screensWake,
             currentTopology: topology,
             topologyAtLastDecision: topology,
-            slots: [makeSlot(id: "work", name: "Work", topology: topology)],
-            userInteractedSinceTrigger: false
+            slots: [makeSlot(id: "work", name: "Work", topology: topology)]
         )
 
         XCTAssertEqual(
@@ -69,20 +68,19 @@ final class AutoRestorePolicyTests: XCTestCase {
         )
     }
 
-    func testWakeWithUnchangedTopologyAutomaticModePromptsAfterInteraction() {
+    func testSystemWakeWithUnchangedTopologyRestoresAutomatically() {
         let topology = makeTopology(uuid: "current")
         let input = makeInput(
             mode: .automatic,
             trigger: .systemWake,
             currentTopology: topology,
             topologyAtLastDecision: topology,
-            slots: [makeSlot(id: "work", name: "Work", topology: topology)],
-            userInteractedSinceTrigger: true
+            slots: [makeSlot(id: "work", name: "Work", topology: topology)]
         )
 
         XCTAssertEqual(
             AutoRestorePolicy.decide(input),
-            .prompt(layoutID: "work", layoutName: "Work")
+            .restore(layoutID: "work", layoutName: "Work")
         )
     }
 
@@ -123,13 +121,11 @@ final class AutoRestorePolicyTests: XCTestCase {
         var context = AutoRestoreDecisionContextState()
         _ = context.begin(
             generation: 1,
-            reason: .systemWake,
-            triggerStartedAt: Date(timeIntervalSince1970: 10)
+            reason: .systemWake
         )
         let replacement = context.begin(
             generation: 2,
-            reason: .displayReconfiguration,
-            triggerStartedAt: Date(timeIntervalSince1970: 20)
+            reason: .displayReconfiguration
         )
         let input = makeInput(
             trigger: replacement.reason,
@@ -309,7 +305,7 @@ final class AutoRestorePolicyTests: XCTestCase {
         )
     }
 
-    func testMostRecentMatchingLayoutBeingEmptyDoesNotFallBackToOlderLayout() {
+    func testEmptyLayoutDoesNotHideAnOlderUsableLayout() {
         let topology = makeTopology(uuid: "current")
         let populated = makeSlot(
             id: "populated",
@@ -328,7 +324,7 @@ final class AutoRestorePolicyTests: XCTestCase {
 
         XCTAssertEqual(
             AutoRestorePolicy.decide(input),
-            .doNothing(reason: "layout is empty")
+            .prompt(layoutID: "populated", layoutName: "Populated")
         )
     }
 
@@ -346,13 +342,12 @@ final class AutoRestorePolicyTests: XCTestCase {
         )
     }
 
-    func testAutomaticModeRestoresMatchingLayoutWithoutUserInteraction() {
+    func testAutomaticModeRestoresMatchingLayout() {
         let topology = makeTopology(uuid: "current")
         let input = makeInput(
             mode: .automatic,
             currentTopology: topology,
-            slots: [makeSlot(id: "work", name: "Work", topology: topology)],
-            userInteractedSinceTrigger: false
+            slots: [makeSlot(id: "work", name: "Work", topology: topology)]
         )
 
         XCTAssertEqual(
@@ -361,19 +356,26 @@ final class AutoRestorePolicyTests: XCTestCase {
         )
     }
 
-    func testAutomaticModeDowngradesToPromptAfterUserInteraction() {
+    func testEachModeKeepsItsContractForEveryEligibleEnvironmentTrigger() {
         let topology = makeTopology(uuid: "current")
-        let input = makeInput(
-            mode: .automatic,
-            currentTopology: topology,
-            slots: [makeSlot(id: "work", name: "Work", topology: topology)],
-            userInteractedSinceTrigger: true
-        )
-
-        XCTAssertEqual(
-            AutoRestorePolicy.decide(input),
-            .prompt(layoutID: "work", layoutName: "Work")
-        )
+        let triggers: [EnvironmentChangeReason] = [
+            .applicationLaunch, .systemWake, .screensWake,
+            .displayReconfiguration, .screenUnlock, .sessionActive
+        ]
+        for trigger in triggers {
+            for mode in AutoRestoreMode.allCases {
+                let input = makeInput(
+                    mode: mode, trigger: trigger, currentTopology: topology,
+                    slots: [makeSlot(id: "work", name: "Work", topology: topology)]
+                )
+                let expected: AutoRestoreDecision = switch mode {
+                case .off: .doNothing(reason: "disabled")
+                case .prompt: .prompt(layoutID: "work", layoutName: "Work")
+                case .automatic: .restore(layoutID: "work", layoutName: "Work")
+                }
+                XCTAssertEqual(AutoRestorePolicy.decide(input), expected, "\(mode), \(trigger)")
+            }
+        }
     }
 }
 
@@ -384,7 +386,6 @@ private extension AutoRestorePolicyTests {
         currentTopology: DisplayTopologyFingerprint,
         topologyAtLastDecision: DisplayTopologyFingerprint? = nil,
         slots: [Slot],
-        userInteractedSinceTrigger: Bool = false,
         alreadyPromptedForCurrentTopology: Bool = false
     ) -> AutoRestoreInput {
         AutoRestoreInput(
@@ -393,7 +394,6 @@ private extension AutoRestorePolicyTests {
             currentTopology: currentTopology,
             topologyAtLastDecision: topologyAtLastDecision,
             slots: slots,
-            userInteractedSinceTrigger: userInteractedSinceTrigger,
             alreadyPromptedForCurrentTopology: alreadyPromptedForCurrentTopology
         )
     }

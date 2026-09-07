@@ -1,6 +1,6 @@
 # Perch Privacy Policy
 
-Last updated: August 2, 2026
+Last updated: September 7, 2026
 
 Perch is a macOS menu bar utility for saving and restoring local window layouts.
 
@@ -16,11 +16,16 @@ Saved layouts are stored locally on your Mac in:
 
 App preferences are stored locally in macOS preferences and Application Support.
 
+If a saved-layout file cannot be read, Perch preserves it in the same folder
+under a `slots.json.corrupt-…` name. Dismissing its recovery notice adds
+`.acknowledged` to the name and keeps the contents. These preserved files may
+contain the same metadata as saved layouts; they are not uploaded automatically.
+
 Perch does not use analytics, advertising trackers, or third-party telemetry.
 
 ## Diagnostics
 
-If you choose to export diagnostics, Perch creates a redacted, not anonymous, JSON report at the location you select. The report can include app bundle identifiers, display geometry, layout identifiers, window and layout counts, timestamps, Perch settings, app and macOS versions, system architecture, and Accessibility permission status. It does not include window titles or layout names. Perch does not upload the report; it leaves your Mac only if you choose to share it.
+If you choose to export diagnostics, Perch creates a redacted, not anonymous, JSON report at the location you select. The report can include app bundle identifiers, display geometry, layout identifiers, window and layout counts, timestamps, Perch settings, app and macOS versions, system architecture, Accessibility permission status, launch-at-login status, and the last automatic restore decision. It does not include window titles or layout names. Error information is limited to a domain and numeric code. Perch does not upload the report; it leaves your Mac only if you choose to share it.
 
 ## Network Access
 

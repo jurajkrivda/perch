@@ -1,4 +1,3 @@
-import CoreGraphics
 import Foundation
 
 private final class AutoRestoreNotificationTokenStore {
@@ -17,44 +16,52 @@ private final class AutoRestoreNotificationTokenStore {
 }
 
 @MainActor
-enum AutoRestoreDiagnostics {
-    private(set) static var lastDecision = "not started"
-
-    static func record(decision: String, trigger: EnvironmentChangeReason) {
-        lastDecision = "\(decision); trigger=\(trigger.rawValue)"
-    }
-}
-
-@MainActor
 final class AutoRestoreCoordinator {
-    private static let recentInteractionThreshold: TimeInterval = 3
     private static let incompleteTopologyRetryDelayNanoseconds: UInt64 = 3_000_000_000
 
     private let slotEngine: SlotEngine
-    private let menuBarController: MenuBarController
+    let menuBarController: any AutoRestorePresenting
+    private let topologyProvider: @MainActor () -> DisplayTopologyFingerprint?
+    private let makeObserver: ObserverFactory
+
+    typealias ObserverFactory = @MainActor (
+        @escaping EnvironmentChangeObserver.SettleTimeoutProvider,
+        @escaping EnvironmentChangeObserver.TriggeredHandler,
+        @escaping EnvironmentChangeObserver.SessionVisibilityHandler,
+        @escaping EnvironmentChangeObserver.SettledHandler
+    ) -> EnvironmentChangeObserver
 
     private var environmentObserver: EnvironmentChangeObserver?
     private let documentChangeObserver = AutoRestoreNotificationTokenStore()
     private var decisionTask: Task<Void, Never>?
     private var incompleteTopologyRetryTask: Task<Void, Never>?
-    private var automaticRestoreTask: Task<Void, Never>?
-    private var automaticRestoreAttemptID: Int?
-    private var restoreTaskTokens = AutoRestoreTaskTokenState()
-    private var automaticRestoreHasCommitted = false
-    private var attemptState = AutoRestoreAttemptState()
+    var automaticRestoreTask: Task<Void, Never>?
+    var automaticRestoreAttemptID: Int?
+    var restoreTaskTokens = AutoRestoreTaskTokenState()
+    var automaticRestoreHasCommitted = false
+    var attemptState = AutoRestoreAttemptState()
     private var retryState = AutoRestoreRetryState()
-    private var decisionContextState = AutoRestoreDecisionContextState()
-    private var triggerGeneration = 0
+    var decisionContextState = AutoRestoreDecisionContextState()
+    var triggerGeneration = 0
     private var settleTimeout: TimeInterval = 10
-    private var isSessionVisible = true
-    private var isStarted = false
+    private var preferredLayoutsByTopology: [String: String] = [:]
+    var isSessionVisible = true
+    var isStarted = false
 
     init(
         slotEngine: SlotEngine,
-        menuBarController: MenuBarController
+        menuBarController: any AutoRestorePresenting,
+        topologyProvider: @escaping @MainActor () -> DisplayTopologyFingerprint? = {
+            DisplayManager.currentTopologyFingerprint()
+        },
+        makeObserver: @escaping ObserverFactory = {
+            EnvironmentChangeObserver(settleTimeout: $0, onTriggered: $1, onSessionVisibilityChanged: $2, onSettled: $3)
+        }
     ) {
         self.slotEngine = slotEngine
         self.menuBarController = menuBarController
+        self.topologyProvider = topologyProvider
+        self.makeObserver = makeObserver
     }
 
     deinit {
@@ -91,17 +98,20 @@ final class AutoRestoreCoordinator {
         retryState.reset()
         decisionContextState.reset()
 
-        let observer = EnvironmentChangeObserver(
-            settleTimeout: { [weak self] in
-                self?.settleTimeout ?? 10
+        let observer = makeObserver(
+            { [weak self] in
+                // Startup may reach this before the asynchronous initial
+                // settings refresh. Honor the saved timeout on the first wait.
+                await self?.refreshSettings()
+                return self?.settleTimeout ?? 10
             },
-            onTriggered: { [weak self] reason in
+            { [weak self] reason in
                 self?.environmentTriggered(reason: reason)
             },
-            onSessionVisibilityChanged: { [weak self] isVisible in
+            { [weak self] isVisible in
                 self?.sessionVisibilityChanged(isVisible: isVisible)
             },
-            onSettled: { [weak self] reason in
+            { [weak self] reason in
                 self?.environmentSettled(reason: reason)
             }
         )
@@ -144,7 +154,7 @@ final class AutoRestoreCoordinator {
         decisionContextState.reset()
         environmentObserver?.stop()
         environmentObserver = nil
-        RestorePromptWindow.invalidateCurrent()
+        menuBarController.invalidateRestorePrompt()
         documentChangeObserver.remove()
     }
 
@@ -152,8 +162,7 @@ final class AutoRestoreCoordinator {
         triggerGeneration &+= 1
         _ = decisionContextState.begin(
             generation: triggerGeneration,
-            reason: reason,
-            triggerStartedAt: Date()
+            reason: reason
         )
         retryState.reset()
         incompleteTopologyRetryTask?.cancel()
@@ -172,7 +181,7 @@ final class AutoRestoreCoordinator {
             automaticRestoreAttemptID = nil
             restoreTaskTokens.invalidate()
         }
-        RestorePromptWindow.invalidateCurrent()
+        menuBarController.invalidateRestorePrompt()
 
         AppLog.display.debug(
             "Invalidated automatic restore state for trigger \(reason.rawValue, privacy: .public); rolledBackPendingAttempt=\(rolledBackPendingAttempt)"
@@ -202,30 +211,27 @@ final class AutoRestoreCoordinator {
             automaticRestoreAttemptID = nil
             restoreTaskTokens.invalidate()
         }
-        RestorePromptWindow.invalidateCurrent()
+        menuBarController.invalidateRestorePrompt()
     }
 
     private func environmentSettled(reason: EnvironmentChangeReason) {
         let generation = triggerGeneration
         let context = decisionContextState.begin(
             generation: generation,
-            reason: reason,
-            triggerStartedAt: Date()
+            reason: reason
         )
         decisionTask?.cancel()
         decisionTask = Task { @MainActor [weak self] in
             await self?.decideAfterEnvironmentSettled(
                 reason: context.reason,
-                generation: generation,
-                triggerStartedAt: context.triggerStartedAt
+                generation: generation
             )
         }
     }
 
     private func decideAfterEnvironmentSettled(
         reason: EnvironmentChangeReason,
-        generation: Int,
-        triggerStartedAt: Date
+        generation: Int
     ) async {
         guard isStarted,
               isSessionVisible,
@@ -263,8 +269,7 @@ final class AutoRestoreCoordinator {
             guard let currentTopology = currentTopology() else {
                 handleIncompleteTopology(
                     reason: reason,
-                    generation: generation,
-                    triggerStartedAt: triggerStartedAt
+                    generation: generation
                 )
                 return
             }
@@ -273,7 +278,7 @@ final class AutoRestoreCoordinator {
                 .matchesIdentity(of: currentTopology) != true
             attemptState.prepareForDecision(currentTopology: currentTopology)
             if topologyChanged {
-                RestorePromptWindow.invalidateCurrent()
+                menuBarController.invalidateRestorePrompt()
             }
 
             let decision = AutoRestorePolicy.decide(AutoRestoreInput(
@@ -282,10 +287,8 @@ final class AutoRestoreCoordinator {
                 currentTopology: currentTopology,
                 topologyAtLastDecision: attemptState.topologyAtLastDecision,
                 slots: document.slots,
-                userInteractedSinceTrigger: userInteractedSinceTrigger(
-                    startedAt: triggerStartedAt
-                ),
-                alreadyPromptedForCurrentTopology: attemptState.alreadyPromptedForCurrentTopology
+                alreadyPromptedForCurrentTopology: attemptState.alreadyPromptedForCurrentTopology,
+                preferredLayoutsByTopology: document.settings.preferredLayoutsByTopology
             ))
 
             let pendingAttempt = attemptState.record(
@@ -299,13 +302,12 @@ final class AutoRestoreCoordinator {
                 document: document,
                 currentTopology: currentTopology,
                 generation: generation,
-                triggerStartedAt: triggerStartedAt,
                 trigger: reason
             )
             guard shouldFinishDecision else { return }
         } catch {
             AppLog.display.error(
-                "Automatic restore decision failed: \(error.localizedDescription, privacy: .public)"
+                "Automatic restore decision failed: \(error.localizedDescription, privacy: .private)"
             )
             recordDecision(
                 menuKey: .autoRestoreDecisionError,
@@ -317,10 +319,9 @@ final class AutoRestoreCoordinator {
         finishDecision(generation: generation)
     }
 
-    private func handleIncompleteTopology(
+    func handleIncompleteTopology(
         reason: EnvironmentChangeReason,
-        generation: Int,
-        triggerStartedAt: Date
+        generation: Int
     ) {
         guard retryState.claimRetry(for: generation) else {
             AppLog.display.warning(
@@ -346,15 +347,13 @@ final class AutoRestoreCoordinator {
         decisionTask = nil
         scheduleIncompleteTopologyRetry(
             reason: reason,
-            generation: generation,
-            triggerStartedAt: triggerStartedAt
+            generation: generation
         )
     }
 
     private func scheduleIncompleteTopologyRetry(
         reason: EnvironmentChangeReason,
-        generation: Int,
-        triggerStartedAt: Date
+        generation: Int
     ) {
         incompleteTopologyRetryTask?.cancel()
         incompleteTopologyRetryTask = Task { @MainActor [weak self] in
@@ -377,8 +376,7 @@ final class AutoRestoreCoordinator {
 
             await self.decideAfterEnvironmentSettled(
                 reason: reason,
-                generation: generation,
-                triggerStartedAt: triggerStartedAt
+                generation: generation
             )
         }
     }
@@ -393,139 +391,53 @@ final class AutoRestoreCoordinator {
         incompleteTopologyRetryTask = nil
     }
 
-    private func apply(
-        _ decision: AutoRestoreDecision,
-        pendingAttempt: AutoRestoreAttemptState.PendingAttempt?,
-        document: SlotStoreDocument,
-        currentTopology: DisplayTopologyFingerprint,
-        generation: Int,
-        triggerStartedAt: Date,
-        trigger: EnvironmentChangeReason
-    ) -> Bool {
-        switch decision {
-        case let .doNothing(reason):
-            AppLog.display.debug(
-                "Automatic restore did nothing: \(reason, privacy: .public)"
-            )
-            recordDecision(
-                menuKey: localizationKey(forNoActionReason: reason),
-                diagnosticCode: "do-nothing:\(reason)",
-                trigger: trigger
-            )
-            return true
-
-        case let .prompt(layoutID, layoutName):
-            guard let pendingAttempt else { return true }
-            let shortcut = menuBarController.registeredRestoreShortcutDescription(
-                for: layoutID,
-                in: document
-            )
-            return showRestorePrompt(
-                attemptID: pendingAttempt.id,
-                layoutID: layoutID,
-                layoutName: layoutName,
-                shortcutDescription: shortcut,
-                expectedTopology: currentTopology,
-                generation: generation,
-                triggerStartedAt: triggerStartedAt,
-                trigger: trigger
-            )
-
-        case let .restore(layoutID, layoutName):
-            guard let pendingAttempt else { return true }
-            let shortcut = menuBarController.registeredRestoreShortcutDescription(
-                for: layoutID,
-                in: document
-            )
-            recordDecision(
-                menuKey: .autoRestoreDecisionRestoreFormat,
-                menuArgument: layoutName,
-                diagnosticCode: "restore:\(layoutID)",
-                trigger: trigger
-            )
-            launchRestoreTask(
-                attemptID: pendingAttempt.id,
-                layoutID: layoutID,
-                preflight: { @MainActor [weak self] in
-                    self?.automaticRestorePreflight(
-                        attemptID: pendingAttempt.id,
-                        layoutID: layoutID,
-                        layoutName: layoutName,
-                        shortcutDescription: shortcut,
-                        expectedTopology: currentTopology,
-                        generation: generation,
-                        triggerStartedAt: triggerStartedAt,
-                        trigger: trigger
-                    ) ?? false
-                }
-            )
-            return true
-        }
-    }
-
-    private func launchRestoreTask(
-        attemptID: Int,
-        layoutID: String,
-        preflight: @escaping RestorePreflight
-    ) {
-        guard !automaticRestoreHasCommitted else { return }
-
-        automaticRestoreTask?.cancel()
-        automaticRestoreHasCommitted = false
-        automaticRestoreAttemptID = attemptID
-        let taskToken = restoreTaskTokens.begin()
-        let restoreTask = menuBarController.restoreLayout(
-            id: layoutID,
-            preflight: preflight
-        )
-        automaticRestoreTask = restoreTask
-
-        Task { @MainActor [weak self] in
-            await restoreTask.value
-            self?.automaticRestoreFinished(
-                attemptID: attemptID,
-                taskToken: taskToken
-            )
-        }
-    }
-
-    private func automaticRestoreFinished(attemptID: Int, taskToken: Int) {
-        guard automaticRestoreAttemptID == attemptID,
-              restoreTaskTokens.finish(taskToken)
-        else {
-            return
-        }
-
-        automaticRestoreTask = nil
-        automaticRestoreAttemptID = nil
-        if automaticRestoreHasCommitted {
-            automaticRestoreHasCommitted = false
-            return
-        }
-
-        // A rejected exclusive-operation/preflight leaves no visible prompt.
-        // Roll it back so a future environment event can offer the same final
-        // topology. A downgrade-to-prompt remains pending and is not touched.
-        if attemptState.isPending(attemptID, kind: .automatic) {
-            let generation = attemptState.pendingAttempt?.generation
-            if attemptState.invalidatePending(attemptID), let generation {
-                decisionContextState.finish(generation: generation)
-            }
-        }
-    }
-
     private func refreshSettings() async {
         do {
             let document = try await slotEngine.currentDocument()
+            guard isStarted else { return }
             settleTimeout = document.settings.autoRestoreSettleTimeout
+            let identity = currentTopology()?.identity ?? ""
+            let preferredLayoutChanged = preferredLayoutsByTopology[identity]
+                != document.settings.preferredLayoutsByTopology[identity]
+            preferredLayoutsByTopology = document.settings.preferredLayoutsByTopology
+            if document.settings.autoRestoreMode == .off, attemptState.pendingAttempt != nil {
+                let trigger = decisionContextState.context?.reason
+                _ = attemptState.invalidatePending()
+                if !automaticRestoreHasCommitted {
+                    automaticRestoreTask?.cancel()
+                    automaticRestoreTask = nil
+                    automaticRestoreAttemptID = nil
+                    restoreTaskTokens.invalidate()
+                }
+                decisionContextState.reset()
+                menuBarController.invalidateRestorePrompt()
+                if let trigger {
+                    recordDecision(
+                        menuKey: .autoRestoreDecisionDisabled,
+                        diagnosticCode: "do-nothing:disabled", trigger: trigger
+                    )
+                }
+            } else if let pending = attemptState.pendingAttempt,
+                      let context = decisionContextState.context,
+                      preferredLayoutChanged || (document.settings.autoRestoreMode == .automatic && pending.kind == .prompt) {
+                // A visible offer was already settled. Honor the newly selected
+                // mode or layout choice and invalidate its old callback. A changed
+                // or hidden environment must settle again through the observer.
+                let canEvaluateNow = isSessionVisible && pending.generation == triggerGeneration &&
+                    attemptState.topologyAtLastDecision == currentTopology()
+                environmentTriggered(reason: context.reason)
+                if canEvaluateNow {
+                    environmentSettled(reason: context.reason)
+                }
+            }
         } catch {
             AppLog.display.error(
-                "Failed to refresh automatic restore settings: \(error.localizedDescription, privacy: .public)"
+                "Failed to refresh automatic restore settings: \(error.localizedDescription, privacy: .private)"
             )
         }
     }
 
-    private func recordDecision(
+    func recordDecision(
         menuKey: LocalizationKey,
         menuArgument: String? = nil,
         diagnosticCode: String,
@@ -538,7 +450,7 @@ final class AutoRestoreCoordinator {
         )
     }
 
-    private func localizationKey(forNoActionReason reason: String) -> LocalizationKey {
+    func localizationKey(forNoActionReason reason: String) -> LocalizationKey {
         switch reason {
         case "disabled": .autoRestoreDecisionDisabled
         case "topology unchanged": .autoRestoreDecisionTopologyUnchanged
@@ -549,210 +461,7 @@ final class AutoRestoreCoordinator {
         }
     }
 
-    private func confirmPrompt(
-        attemptID: Int,
-        layoutID: String,
-        expectedTopology: DisplayTopologyFingerprint,
-        generation: Int,
-        trigger: EnvironmentChangeReason
-    ) {
-        guard attemptState.transitionToAutomatic(attemptID) else { return }
-        guard confirmationPreflight(
-            expectedTopology: expectedTopology,
-            generation: generation,
-            trigger: trigger
-        ) else {
-            _ = attemptState.complete(attemptID)
-            decisionContextState.finish(generation: generation)
-            return
-        }
-
-        launchRestoreTask(
-            attemptID: attemptID,
-            layoutID: layoutID,
-            preflight: { @MainActor [weak self] in
-                guard let self,
-                      self.attemptState.isPending(attemptID, kind: .automatic),
-                      self.confirmationPreflight(
-                        expectedTopology: expectedTopology,
-                        generation: generation,
-                        trigger: trigger
-                      ),
-                      self.attemptState.commit(attemptID)
-                else {
-                    return false
-                }
-
-                self.decisionContextState.finish(generation: generation)
-                self.automaticRestoreHasCommitted = true
-                return true
-            }
-        )
-    }
-
-    private func confirmationPreflight(
-        expectedTopology: DisplayTopologyFingerprint,
-        generation: Int,
-        trigger: EnvironmentChangeReason
-    ) -> Bool {
-        guard isStarted,
-              isSessionVisible,
-              generation == triggerGeneration
-        else {
-            return false
-        }
-
-        guard currentTopology()?.matchesIdentity(of: expectedTopology) == true else {
-            recordDecision(
-                menuKey: .autoRestoreDecisionNoLayout,
-                diagnosticCode: "do-nothing:topology-changed-before-confirmation",
-                trigger: trigger
-            )
-            return false
-        }
-
-        return true
-    }
-
-    private func automaticRestorePreflight(
-        attemptID: Int,
-        layoutID: String,
-        layoutName: String,
-        shortcutDescription: String?,
-        expectedTopology: DisplayTopologyFingerprint,
-        generation: Int,
-        triggerStartedAt: Date,
-        trigger: EnvironmentChangeReason
-    ) -> Bool {
-        guard attemptState.isPending(attemptID, kind: .automatic),
-              confirmationPreflight(
-                expectedTopology: expectedTopology,
-                generation: generation,
-                trigger: trigger
-              )
-        else {
-            return false
-        }
-
-        guard !userInteractedSinceTrigger(startedAt: triggerStartedAt) else {
-            guard attemptState.downgradeToPrompt(attemptID) else { return false }
-            _ = showRestorePrompt(
-                attemptID: attemptID,
-                layoutID: layoutID,
-                layoutName: layoutName,
-                shortcutDescription: shortcutDescription,
-                expectedTopology: expectedTopology,
-                generation: generation,
-                triggerStartedAt: triggerStartedAt,
-                trigger: trigger
-            )
-            return false
-        }
-
-        guard attemptState.commit(attemptID) else { return false }
-        decisionContextState.finish(generation: generation)
-        automaticRestoreHasCommitted = true
-        return true
-    }
-
-    private func showRestorePrompt(
-        attemptID: Int,
-        layoutID: String,
-        layoutName: String,
-        shortcutDescription: String?,
-        expectedTopology: DisplayTopologyFingerprint,
-        generation: Int,
-        triggerStartedAt: Date,
-        trigger: EnvironmentChangeReason
-    ) -> Bool {
-        guard attemptState.isPending(attemptID, kind: .prompt) else { return true }
-
-        let didPresent = RestorePromptWindow.show(
-            layoutName: layoutName,
-            shortcutDescription: shortcutDescription,
-            duration: 12,
-            onConfirm: { [weak self] in
-                self?.confirmPrompt(
-                    attemptID: attemptID,
-                    layoutID: layoutID,
-                    expectedTopology: expectedTopology,
-                    generation: generation,
-                    trigger: trigger
-                )
-            },
-            onDismiss: { [weak self] in
-                guard let self else { return }
-                if self.attemptState.complete(attemptID) {
-                    self.decisionContextState.finish(generation: generation)
-                }
-                AppLog.display.debug(
-                    "Automatic restore prompt dismissed for layout \(layoutID, privacy: .public)"
-                )
-            },
-            onSupersededByRestore: { [weak self] in
-                guard let self else { return }
-                if self.attemptState.complete(attemptID) {
-                    self.decisionContextState.finish(generation: generation)
-                }
-                AppLog.display.debug(
-                    "Automatic restore prompt confirmed by an existing restore action for layout \(layoutID, privacy: .public)"
-                )
-            }
-        )
-
-        guard didPresent else {
-            _ = attemptState.invalidatePending(attemptID)
-            AppLog.display.warning(
-                "Automatic restore prompt deferred because no visible screen is available"
-            )
-            handleIncompleteTopology(
-                reason: trigger,
-                generation: generation,
-                triggerStartedAt: triggerStartedAt
-            )
-            return false
-        }
-
-        recordDecision(
-            menuKey: .autoRestoreDecisionPromptFormat,
-            menuArgument: layoutName,
-            diagnosticCode: "prompt:\(layoutID)",
-            trigger: trigger
-        )
-        return true
-    }
-
-    private func currentTopology() -> DisplayTopologyFingerprint? {
-        DisplayManager.currentTopologyFingerprint()
-    }
-
-    private func userInteractedSinceTrigger(startedAt: Date) -> Bool {
-        let eventTypes: [CGEventType] = [
-            .keyDown,
-            .leftMouseDown,
-            .rightMouseDown,
-            .otherMouseDown,
-            .mouseMoved,
-            .leftMouseDragged,
-            .rightMouseDragged,
-            .otherMouseDragged,
-            .scrollWheel
-        ]
-
-        // Keep the explicit three-second safety threshold from the brief, but
-        // also cover the entire settle interval so input immediately after a
-        // trigger cannot age out before a slow dock becomes stable.
-        let elapsedSinceTrigger = max(Date().timeIntervalSince(startedAt), 0)
-        let interactionWindow = max(
-            Self.recentInteractionThreshold,
-            elapsedSinceTrigger
-        )
-
-        return eventTypes.contains { eventType in
-            CGEventSource.secondsSinceLastEventType(
-                .combinedSessionState,
-                eventType: eventType
-            ) <= interactionWindow
-        }
+    func currentTopology() -> DisplayTopologyFingerprint? {
+        topologyProvider()
     }
 }

@@ -14,11 +14,19 @@ APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 APP_BINARY="$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 ENTITLEMENTS="$ROOT_DIR/Perch/Perch.entitlements"
 
+usage() {
+  echo "usage: $0 [run|--build-only|--debug|--logs|--telemetry|--verify]"
+}
+
+case "$MODE" in
+  -h|--help) usage; exit 0 ;;
+  run|--build-only|--debug|debug|--logs|logs|--telemetry|telemetry|--verify|verify) ;;
+  *) usage >&2; exit 2 ;;
+esac
+
 if [[ ! -d "$ROOT_DIR/Perch.xcodeproj" ]]; then
   xcodegen generate --spec "$ROOT_DIR/project.yml"
 fi
-
-pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 
 xcodebuild \
   -project "$ROOT_DIR/Perch.xcodeproj" \
@@ -40,7 +48,7 @@ find_codesign_identity() {
   fi
 
   security find-identity -p codesigning -v 2>/dev/null \
-    | sed -n 's/.*"\(Apple Development: Juraj Krivda.*\)".*/\1/p' \
+    | sed -n 's/.*"\(Apple Development: .*\)".*/\1/p' \
     | head -n 1
 }
 
@@ -64,6 +72,19 @@ sign_app_if_possible() {
 
 stage_app
 sign_app_if_possible
+
+if [[ "$MODE" == "--build-only" ]]; then
+  echo "Debug app: $APP_BUNDLE"
+  exit 0
+fi
+
+# A failed build must never terminate the installed menu-bar app. Also avoid
+# silently testing that existing process when the single-instance lock rejects
+# this debug bundle. Let the developer choose when to stop their active app.
+if pgrep -x "$APP_NAME" >/dev/null 2>&1; then
+  echo "error: Perch is already running. Quit it before launching this debug build." >&2
+  exit 1
+fi
 
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"

@@ -158,7 +158,7 @@ done
 
 codesign --verify --strict --deep --verbose=4 "$APP_BUNDLE"
 
-SPARKLE_LICENSE_PATH="$APP_BUNDLE/Contents/Resources/Sparkle-2.9.5-LICENSE.txt"
+SPARKLE_LICENSE_PATH="$APP_BUNDLE/Contents/Resources/Sparkle-2.9.6-LICENSE.txt"
 if [[ ! -f "$SPARKLE_LICENSE_PATH" ]]; then
   echo "error: bundled Sparkle license is missing at $SPARKLE_LICENSE_PATH" >&2
   exit 1

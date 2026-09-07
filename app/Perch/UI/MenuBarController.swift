@@ -4,14 +4,16 @@ import Carbon
 @MainActor
 final class MenuBarController: NSObject {
     private let statusItem: NSStatusItem
-    private let slotEngine: SlotEngine?
+    let slotEngine: SlotEngine?
     private var menu: NSMenu?
-    private var slots = Slot.defaultSlots
-    private var settings = PerchSettings()
-    private var lastRestoreResult: SlotOperationResult?
-    private var lastAutomaticDecision: (key: LocalizationKey, argument: String?)?
-    private var hotkeyRegistrationState = HotkeyRegistrationState()
+    var slots = Slot.defaultSlots
+    var settings = PerchSettings()
+    var recoveryNotice: StoreRecoveryNotice?
+    var lastRestoreResult: SlotOperationResult? { slotEngine?.restoreSession.result }
+    var lastAutomaticDecision: (key: LocalizationKey, argument: String?)?
+    var hotkeyRegistrationState = HotkeyRegistrationState()
     private var languageChangeObserver: NSObjectProtocol?
+    private var restoreChangeObserver: NSObjectProtocol?
 
     private struct StatusItemPresentation {
         var title = "Perch"
@@ -19,7 +21,7 @@ final class MenuBarController: NSObject {
     }
     private var statusItemPresentation = StatusItemPresentation()
 
-    private enum LayoutOperationKind {
+    enum LayoutOperationKind {
         case save
         case restore
     }
@@ -44,6 +46,14 @@ final class MenuBarController: NSObject {
                 self?.rebuildMenu()
             }
         }
+        restoreChangeObserver = NotificationCenter.default.addObserver(
+            forName: .perchRestoreDidChange, object: slotEngine?.restoreSession, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.configureStatusItem()
+                self?.rebuildMenu()
+            }
+        }
     }
 
     private func configureStatusItem() {
@@ -52,25 +62,32 @@ final class MenuBarController: NSObject {
             return
         }
 
+        let session = slotEngine?.restoreSession
+        let running = session?.isRunning == true
         button.image = NSImage(
-            systemSymbolName: statusItemPresentation.symbolName,
+            systemSymbolName: running ? "arrow.triangle.2.circlepath" : statusItemPresentation.symbolName,
             accessibilityDescription: "Perch"
         )
         button.image?.isTemplate = true
         button.appearance = nil
         button.title = settings.showsMenuBarLabel ? " \(statusItemPresentation.title)" : ""
+        if running, let session, !session.isStabilizing {
+            button.title = " \(session.completedCount)/\(session.result?.total ?? 0)"
+        }
+        button.toolTip = running ? L10n.text(.restoreActivity) : "Perch"
         button.target = self
         button.action = #selector(showMenu)
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
     }
 
-    private func rebuildMenu() {
+    func rebuildMenu() {
         let menu = NSMenu()
 
         addAccessibilityWarning(to: menu)
+        addStoreRecoveryWarning(to: menu)
         addHotkeyRegistrationWarning(to: menu)
         addLayoutItems(to: menu)
-        if lastRestoreResult != nil || lastAutomaticDecision != nil {
+        if lastRestoreResult != nil || lastAutomaticDecision != nil || slotEngine?.restoreSession.isRunning == true {
             menu.addItem(.separator())
         }
         addLastRestoreReport(to: menu)
@@ -79,13 +96,13 @@ final class MenuBarController: NSObject {
         menu.addItem(.separator())
 
         let createItem = NSMenuItem(
-            title: "\(L10n.text(.createLayout))…",
+            title: "\(L10n.text(.captureCurrentLayout))…",
             action: #selector(createLayout),
             keyEquivalent: ""
         )
         createItem.target = self
         createItem.image = menuIcon("plus")
-        createItem.isEnabled = slotEngine != nil
+        createItem.isEnabled = slotEngine != nil && AccessibilityManager.isTrusted() && slotEngine?.restoreSession.isRunning != true
         menu.addItem(createItem)
 
         let updateItem = NSMenuItem(
@@ -119,100 +136,6 @@ final class MenuBarController: NSObject {
         menu.addItem(quitItem)
 
         self.menu = menu
-    }
-
-    private func addLayoutItems(to menu: NSMenu) {
-        menu.addItem(.sectionHeader(title: L10n.text(.layoutsSectionTitle)))
-
-        guard !slots.isEmpty else {
-            let emptyItem = NSMenuItem(title: L10n.text(.noLayoutsYet), action: nil, keyEquivalent: "")
-            emptyItem.isEnabled = false
-            menu.addItem(emptyItem)
-            return
-        }
-
-        let canUseEngine = slotEngine != nil
-        let canSave = canUseEngine && AccessibilityManager.isTrusted()
-        let document = SlotStoreDocument(slots: slots, settings: settings)
-
-        for index in slots.indices {
-            let slot = slots[index]
-            let hasWindows = !slot.windows.isEmpty
-            let restoreHotkey = document.effectiveRestoreHotkey(at: index)
-            let saveHotkey = document.effectiveSaveHotkey(at: index)
-            let restoreKeyEquivalent = menuKeyEquivalentIfAvailable(for: restoreHotkey)
-            let saveKeyEquivalent = menuKeyEquivalentIfAvailable(for: saveHotkey)
-
-            if hasWindows {
-                let restoreItem = NSMenuItem(
-                    title: slot.name,
-                    action: #selector(restoreLayout(_:)),
-                    keyEquivalent: restoreKeyEquivalent
-                )
-                restoreItem.keyEquivalentModifierMask = restoreHotkey.map(menuModifierFlags(for:)) ?? []
-                restoreItem.target = self
-                restoreItem.representedObject = slot.id
-                restoreItem.image = menuIcon("rectangle.on.rectangle")
-                restoreItem.isEnabled = canUseEngine
-                if let restoreHotkey, isHotkeyUnavailable(restoreHotkey) {
-                    restoreItem.toolTip = unavailableHotkeyTooltip(for: restoreHotkey)
-                }
-                menu.addItem(restoreItem)
-            } else {
-                let emptyItem = NSMenuItem(title: slot.name, action: nil, keyEquivalent: "")
-                emptyItem.image = menuIcon("rectangle.badge.plus")
-                emptyItem.isEnabled = false
-                emptyItem.toolTip = L10n.text(.noWindowsSavedYet)
-                menu.addItem(emptyItem)
-            }
-
-            let saveTitle = hasWindows
-                ? L10n.format(.updateLayoutWindowsFormat, slot.name)
-                : L10n.format(.saveCurrentWindowsFormat, slot.name)
-            let saveItem = NSMenuItem(
-                title: saveTitle,
-                action: #selector(saveLayout(_:)),
-                keyEquivalent: saveKeyEquivalent
-            )
-            // For layout index >= 9 there is no default save hotkey, so key/mask fall back to empty.
-            saveItem.keyEquivalentModifierMask = saveHotkey.map(menuModifierFlags(for:)) ?? []
-            saveItem.target = self
-            saveItem.representedObject = slot.id
-            saveItem.image = menuIcon(hasWindows ? "arrow.triangle.2.circlepath" : "square.and.arrow.down")
-            saveItem.isEnabled = canSave
-            saveItem.indentationLevel = 1
-            if let saveHotkey, isHotkeyUnavailable(saveHotkey) {
-                saveItem.toolTip = unavailableHotkeyTooltip(for: saveHotkey)
-            }
-            menu.addItem(saveItem)
-        }
-    }
-
-    private func addHotkeyRegistrationWarning(to menu: NSMenu) {
-        let hotkeyRegistrationFailures = hotkeyRegistrationState.failures
-        guard !hotkeyRegistrationFailures.isEmpty else {
-            return
-        }
-
-        let warningItem = NSMenuItem(title: L10n.text(.someShortcutsUnavailable), action: nil, keyEquivalent: "")
-        warningItem.image = menuIcon("exclamationmark.triangle.fill")
-
-        let submenu = NSMenu()
-
-        for failure in hotkeyRegistrationFailures {
-            let item = NSMenuItem(
-                title: "\(failure.displayString): \(failure.description)",
-                action: nil,
-                keyEquivalent: ""
-            )
-            item.toolTip = L10n.format(.shortcutRejectedTooltipFormat, failure.status)
-            item.isEnabled = false
-            submenu.addItem(item)
-        }
-
-        warningItem.submenu = submenu
-        menu.addItem(warningItem)
-        menu.addItem(.separator())
     }
 
     private func addAccessibilityWarning(to menu: NSMenu) {
@@ -255,75 +178,11 @@ final class MenuBarController: NSObject {
         UpdaterController.shared.checkForUpdates()
     }
 
-    private func addLastRestoreReport(to menu: NSMenu) {
-        guard let lastRestoreResult else {
-            return
-        }
-
-        let reportItem = NSMenuItem(title: L10n.text(.lastRestoreReport), action: nil, keyEquivalent: "")
-        reportItem.image = menuIcon("list.bullet.rectangle")
-
-        let submenu = NSMenu()
-
-        let summaryItem = NSMenuItem(
-            title: truncatedMenuText(lastRestoreResult.restoreSummary),
-            action: nil,
-            keyEquivalent: ""
-        )
-        summaryItem.toolTip = lastRestoreResult.restoreSummary
-        summaryItem.isEnabled = false
-        submenu.addItem(summaryItem)
-
-        let reportRows = lastRestoreResult.details.filter { !$0.isSuccess || $0.didLaunchApplication || $0.matchReason != nil }
-        if reportRows.isEmpty {
-            let allRestoredItem = NSMenuItem(title: L10n.text(.allWindowsRestored), action: nil, keyEquivalent: "")
-            allRestoredItem.image = menuIcon("checkmark.circle")
-            allRestoredItem.isEnabled = false
-            submenu.addItem(allRestoredItem)
-        } else {
-            submenu.addItem(.separator())
-            for report in reportRows {
-                let item = NSMenuItem(
-                    title: truncatedMenuText(menuTitle(for: report)),
-                    action: nil,
-                    keyEquivalent: ""
-                )
-                item.toolTip = menuTooltip(for: report)
-                item.image = menuIcon(menuIconName(for: report.outcome))
-                item.isEnabled = false
-                submenu.addItem(item)
-            }
-        }
-
-        reportItem.submenu = submenu
-        menu.addItem(reportItem)
-    }
-
-    private func addLastAutomaticDecision(to menu: NSMenu) {
-        guard let lastAutomaticDecision else { return }
-
-        let summary = if let argument = lastAutomaticDecision.argument {
-            L10n.format(lastAutomaticDecision.key, argument)
-        } else {
-            L10n.text(lastAutomaticDecision.key)
-        }
-        let title = L10n.format(.lastAutomaticDecisionFormat, summary)
-        let item = NSMenuItem(
-            title: truncatedMenuText(title, limit: 46),
-            action: nil,
-            keyEquivalent: ""
-        )
-        item.toolTip = title
-        item.image = menuIcon("display.2")
-        item.isEnabled = false
-        menu.addItem(item)
-    }
-
     @objc private func restartPerch() {
         do {
             try AccessibilityManager.relaunchCurrentApp()
         } catch {
-            AppLog.app.error("Failed to relaunch Perch: \(error.localizedDescription, privacy: .public)")
+            AppLog.app.error("Failed to relaunch Perch: \(error.localizedDescription, privacy: .private)")
             ToastWindow.show(LocalizedErrorMessages.message(for: error))
         }
     }
@@ -352,13 +211,13 @@ final class MenuBarController: NSObject {
                     : L10n.text(.accessibilityPermissionResetEnable)
                 )
             } catch {
-                AppLog.menu.error("Accessibility permission reset failed: \(error.localizedDescription, privacy: .public)")
+                AppLog.menu.error("Accessibility permission reset failed: \(error.localizedDescription, privacy: .private)")
                 ToastWindow.show(LocalizedErrorMessages.message(for: error))
             }
         }
     }
 
-    @objc private func saveLayout(_ sender: NSMenuItem) {
+    @objc func saveLayout(_ sender: NSMenuItem) {
         guard let slotID = sender.representedObject as? String else {
             AppLog.menu.error("Save layout menu item missing layout ID")
             return
@@ -367,7 +226,7 @@ final class MenuBarController: NSObject {
         saveLayout(id: slotID)
     }
 
-    @objc private func restoreLayout(_ sender: NSMenuItem) {
+    @objc func restoreLayout(_ sender: NSMenuItem) {
         guard let slotID = sender.representedObject as? String else {
             AppLog.menu.error("Restore layout menu item missing layout ID")
             return
@@ -379,7 +238,7 @@ final class MenuBarController: NSObject {
     @objc private func createLayout() {
         guard let slotEngine,
               let name = promptForLayoutName(
-                  title: L10n.text(.createLayout),
+                  title: L10n.text(.captureCurrentLayout),
                   defaultName: L10n.text(.newLayoutDefaultName)
               )
         else {
@@ -388,7 +247,7 @@ final class MenuBarController: NSObject {
 
         Task { @MainActor in
             do {
-                let layout = try await slotEngine.createLayout(name: name)
+                let layout = try await slotEngine.createLayoutFromCurrentWindows(name: name)
                 ToastWindow.show(L10n.format(.createdLayoutFormat, layout.name))
                 reloadSlots()
             } catch {
@@ -421,6 +280,7 @@ final class MenuBarController: NSObject {
         // A global restore shortcut is also a confirmation of an open restore
         // suggestion, so no separate hotkey path is needed.
         RestorePromptWindow.dismissCurrentForRestore()
+        if preflight == nil, let slotEngine { RestoreReportWindowController.shared.show(engine: slotEngine) }
         return Task { @MainActor in
             guard !Task.isCancelled else { return }
             await performLayoutOperation(kind: .restore) {
@@ -452,7 +312,6 @@ final class MenuBarController: NSObject {
     }
 
     func refresh() {
-        lastRestoreResult = nil
         reloadSlots()
     }
 
@@ -484,7 +343,7 @@ final class MenuBarController: NSObject {
         NSApp.terminate(nil)
     }
 
-    private func reloadSlots() {
+    func reloadSlots() {
         guard let slotEngine else {
             slots = Slot.defaultSlots
             rebuildMenu()
@@ -494,174 +353,16 @@ final class MenuBarController: NSObject {
         Task { @MainActor in
             do {
                 let document = try await slotEngine.currentDocument()
+                recoveryNotice = try await slotEngine.recoveryNotice()
                 slots = document.slots
                 settings = document.settings
                 configureStatusItem()
             } catch {
-                AppLog.persistence.error("Failed to reload slots: \(error.localizedDescription, privacy: .public)")
+                AppLog.persistence.error("Failed to reload slots: \(error.localizedDescription, privacy: .private)")
                 slots = Slot.defaultSlots
             }
 
             rebuildMenu()
-        }
-    }
-
-    private func performLayoutOperation(
-        kind: LayoutOperationKind,
-        _ operation: @escaping @MainActor () async throws -> SlotOperationResult?
-    ) async {
-        do {
-            guard let result = try await operation() else {
-                AppLog.menu.error("Layout operation unavailable because SlotEngine is missing")
-                return
-            }
-
-            AppLog.menu.info("Layout operation finished for \(result.slotName, privacy: .private): \(result.succeeded)/\(result.total)")
-            switch kind {
-            case .save:
-                lastRestoreResult = nil
-            case .restore:
-                lastRestoreResult = result
-            }
-            showToast(for: result, kind: kind)
-            reloadSlots()
-        } catch SlotEngineError.operationInProgress {
-            AppLog.menu.info("Ignored layout operation because another one is still running")
-        } catch SlotEngineError.restorePreflightRejected {
-            AppLog.menu.info("Cancelled automatic restore because its preflight was rejected")
-        } catch is CancellationError {
-            AppLog.menu.info("Layout operation cancelled; some windows may already have moved")
-        } catch {
-            // The description can carry user content (saved window titles), so it stays private.
-            AppLog.menu.error("Layout operation failed: \(error.localizedDescription, privacy: .private)")
-            if isAccessibilityPermissionError(error) {
-                await handleAccessibilityPermissionFailure()
-            } else {
-                ToastWindow.show(LocalizedErrorMessages.message(for: error))
-            }
-        }
-    }
-
-    private func handleAccessibilityPermissionFailure() async {
-        switch AccessibilityManager.permissionState() {
-        case .trusted:
-            rebuildMenu()
-            ToastWindow.show(L10n.text(.accessibilityGranted))
-        case .pending:
-            AccessibilityManager.logStatus(reason: "operation failed while pending")
-            rebuildMenu()
-            ToastWindow.show(L10n.text(.accessibilityPermissionPending))
-        case .notRequested:
-            let isTrusted = await AccessibilityManager.requestPermissionAndWait()
-            rebuildMenu()
-            ToastWindow.show(
-                isTrusted
-                ? L10n.text(.accessibilityGranted)
-                : L10n.text(.accessibilityBannerRequiredMessage)
-            )
-        }
-    }
-
-    private func accessibilityMenuTitle(for permissionState: AccessibilityManager.PermissionState) -> String {
-        switch permissionState {
-        case .trusted:
-            return ""
-        case .notRequested:
-            return L10n.text(.grantAccessibilityPermission)
-        case .pending:
-            return L10n.text(.grantAccessibilityPermissionPending)
-        }
-    }
-
-    private func showToast(for result: SlotOperationResult, kind: LayoutOperationKind) {
-        switch kind {
-        case .save:
-            ToastWindow.showSavedWindowCount(result.succeeded)
-        case .restore:
-            ToastWindow.show(result.restoreSummary, symbolName: restoreToastSymbol(for: result))
-        }
-    }
-
-    private func restoreToastSymbol(for result: SlotOperationResult) -> String {
-        result.skipped == 0 ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
-    }
-
-    private func menuTitle(for report: RestoreWindowReport) -> String {
-        let outcomeKey: LocalizationKey = switch report.outcome {
-        case .restored: .menuOutcomeRestored
-        case .launchedAndRestored: .menuOutcomeOpenedAndRestored
-        case .appNotInstalled: .menuOutcomeNotInstalled
-        case .launchFailed: .menuOutcomeLaunchFailed
-        case .appNotRunning: .menuOutcomeClosed
-        case .windowNotFound: .menuOutcomeWindowNotFound
-        case .ambiguousWindowMatch: .menuOutcomeAmbiguousWindows
-        case .frameWriteFailed: .menuOutcomeMoveFailed
-        case .skipped: .menuOutcomeSkipped
-        }
-
-        return "\(report.appName): \(L10n.text(outcomeKey))"
-    }
-
-    private func menuTooltip(for report: RestoreWindowReport) -> String {
-        var lines = [
-            "\(L10n.text(.appLabel)): \(report.appName)",
-            "\(L10n.text(.bundleIDLabel)): \(report.bundleIdentifier)",
-            "\(L10n.text(.windowLabel)): \(report.windowTitle)"
-        ]
-
-        if report.didLaunchApplication {
-            lines.append(L10n.text(.openedDuringRestore))
-        }
-
-        if let matchReason = report.matchReason {
-            lines.append("\(L10n.text(.matchedByLabel)): \(matchReason.userDescription)")
-        }
-
-        if let message = report.message, !message.isEmpty {
-            lines.append("\(L10n.text(.reasonLabel)): \(message)")
-        }
-
-        return lines.joined(separator: "\n")
-    }
-
-    private func menuIconName(for outcome: RestoreWindowOutcome) -> String {
-        switch outcome {
-        case .restored:
-            "checkmark.circle"
-        case .launchedAndRestored:
-            "arrow.up.forward.app"
-        case .appNotInstalled:
-            "questionmark.app"
-        case .launchFailed:
-            "exclamationmark.triangle"
-        case .appNotRunning:
-            "app"
-        case .windowNotFound:
-            "rectangle.dashed"
-        case .ambiguousWindowMatch:
-            "questionmark.square.dashed"
-        case .frameWriteFailed:
-            "rectangle.badge.exclamationmark"
-        case .skipped:
-            "minus.circle"
-        }
-    }
-
-    private func truncatedMenuText(_ text: String, limit: Int = 30) -> String {
-        guard text.count > limit else {
-            return text
-        }
-
-        return "\(text.prefix(max(limit - 1, 0)))…"
-    }
-
-    private func isAccessibilityPermissionError(_ error: Error) -> Bool {
-        switch error {
-        case WindowSnapshotterError.accessibilityPermissionMissing,
-             WindowMoverError.accessibilityPermissionMissing:
-            true
-        default:
-            false
         }
     }
 
@@ -685,56 +386,13 @@ final class MenuBarController: NSObject {
         return trimmedName.isEmpty ? nil : trimmedName
     }
 
-    private func menuIcon(_ symbolName: String) -> NSImage? {
+    func menuIcon(_ symbolName: String) -> NSImage? {
         let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
         image?.isTemplate = true
         return image
     }
 
-    private func menuKeyEquivalent(for hotkey: HotkeyBinding) -> String {
-        switch Int(hotkey.keyCode) {
-        case kVK_Space:
-            return " "
-        default:
-            let displayName = HotkeyBinding.keyDisplayName(for: hotkey.keyCode)
-            return displayName.count == 1 ? displayName.lowercased() : ""
-        }
-    }
 
-    private func menuKeyEquivalentIfAvailable(for hotkey: HotkeyBinding?) -> String {
-        guard let hotkey, !isHotkeyUnavailable(hotkey) else {
-            return ""
-        }
-
-        return menuKeyEquivalent(for: hotkey)
-    }
-
-    private func menuModifierFlags(for hotkey: HotkeyBinding) -> NSEvent.ModifierFlags {
-        var flags: NSEvent.ModifierFlags = []
-
-        if hotkey.modifiers & UInt32(cmdKey) != 0 {
-            flags.insert(.command)
-        }
-        if hotkey.modifiers & UInt32(optionKey) != 0 {
-            flags.insert(.option)
-        }
-        if hotkey.modifiers & UInt32(shiftKey) != 0 {
-            flags.insert(.shift)
-        }
-        if hotkey.modifiers & UInt32(controlKey) != 0 {
-            flags.insert(.control)
-        }
-
-        return flags
-    }
-
-    private func isHotkeyUnavailable(_ hotkey: HotkeyBinding) -> Bool {
-        !hotkeyRegistrationState.isRegistered(hotkey)
-    }
-
-    private func unavailableHotkeyTooltip(for hotkey: HotkeyBinding) -> String {
-        L10n.format(.shortcutUnavailableTooltipFormat, hotkey.displayString)
-    }
 }
 
 extension MenuBarController: NSMenuItemValidation {

@@ -22,10 +22,12 @@ Perch is free and open source under the Apache License 2.0.
 
 - **Named layouts.** Save the current arrangement of your windows under a name,
   restore it later from the menu bar or a global shortcut.
-- **Automatic restore.** When your Mac wakes or your display arrangement
+- **Automatic restore.** When Perch starts, your Mac wakes, or your display arrangement
   changes, Perch waits for things to settle and offers to restore the layout
   saved for that arrangement. It asks by default — nothing moves without your
   confirmation. Fully automatic mode is available if you prefer it.
+  Turn on **Launch at login** for restores after a restart. Automatic mode
+  restores without confirmation, including while you use the keyboard or mouse.
 - **Multiple displays.** Layouts remember which physical display each window
   belonged to, by display UUID, so a window goes back to the right screen even
   if the arrangement shifted.
@@ -72,7 +74,7 @@ therefore attach the DMG under the exact filename `Perch.dmg` in every release.
 
 Perch checks for signed updates through
 [Sparkle](https://sparkle-project.org). GitHub Releases hosts the install DMG;
-GitHub Pages hosts only the signed Sparkle feed. Update downloads come from the
+GitHub Pages hosts the Sparkle feed. Its update downloads are signed and come from the
 matching tagged GitHub Release.
 
 ## Privacy
@@ -145,9 +147,14 @@ Tests:
 xcodebuild test -project Perch.xcodeproj -scheme PerchModelTests -destination 'platform=macOS'
 ```
 
-The test target compiles the model plus testable core policy and state types,
-without launching the AppKit UI. Matching rules and auto-restore decisions are
-kept as pure logic so they can run without a window server.
+The test target compiles all reusable application sources without starting the
+app lifecycle. Matching tests use pure values; restore integration tests use
+isolated notification centers, temporary stores, and fake window movers.
+They never move your windows or change your saved layouts.
+
+Run `python3 script/check_repository.py` from `app/` to check source size,
+duplicate files, shell syntax, and synchronized Sparkle dependencies.
+See the [architecture guide](app/docs/architecture.md) for the module map.
 
 ## Repository layout
 

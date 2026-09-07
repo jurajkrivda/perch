@@ -7,6 +7,14 @@ struct GeneralSettingsTab: View {
 
     var body: some View {
         Form {
+            if let errorMessage = model.errorMessage {
+                Section {
+                    Text(errorMessage).foregroundStyle(.red)
+                } header: {
+                    Text(localization.text(.errorSectionTitle))
+                }
+            }
+
             Section {
                 Picker(localization.text(.languagePickerLabel), selection: $model.selectedLanguage) {
                     ForEach(model.languageOptions) { language in
@@ -91,7 +99,11 @@ struct GeneralSettingsTab: View {
             } header: {
                 Text(localization.text(.autoRestoreSectionTitle))
             } footer: {
-                if model.autoRestoreMode == .prompt {
+                if model.autoRestoreMode == .automatic {
+                    Text(localization.text(.autoRestoreAutomaticFooter))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if model.autoRestoreMode == .prompt {
                     Text(localization.text(.autoRestorePromptFooter))
                         .font(.caption)
                         .foregroundStyle(.secondary)

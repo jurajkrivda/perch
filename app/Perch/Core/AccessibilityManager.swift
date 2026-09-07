@@ -214,7 +214,7 @@ enum AccessibilityManager {
 
         guard process.terminationStatus == 0 else {
             AppLog.accessibility.error(
-                "Accessibility permission reset failed with status \(process.terminationStatus): \(output, privacy: .public)"
+                "Accessibility permission reset failed with status \(process.terminationStatus): \(output, privacy: .private)"
             )
             throw ResetError.failed(status: process.terminationStatus, output: output)
         }

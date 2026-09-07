@@ -8,6 +8,14 @@ import Foundation
 enum LocalizedErrorMessages {
     static func message(for error: Error) -> String {
         switch error {
+        case SlotEngineError.noWindowsToCapture: L10n.text(.noWindowsToCapture)
+        case SlotEngineError.layoutChangedSinceRestore: L10n.text(.layoutChangedSinceRestore)
+        case SlotEngineError.repairWindowUnavailable: L10n.text(.repairWindowUnavailable)
+        case SlotEngineError.nothingToUndo: L10n.text(.nothingToUndo)
+        case SlotEngineError.undoDisplayConfigurationChanged: L10n.text(.undoDisplayConfigurationChanged)
+        case SlotEngineError.windowAlreadyAssigned: L10n.text(.windowAlreadyAssigned)
+        case SlotEngineError.displayConfigurationChanged:
+            L10n.text(.displaysChangedDuringSave)
         case SlotEngineError.invalidLayoutName:
             L10n.text(.layoutNameCannotBeEmpty)
         case SlotEngineError.operationInProgress:

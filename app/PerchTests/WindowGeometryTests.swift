@@ -59,7 +59,7 @@ final class WindowGeometryTests: XCTestCase {
             localFrame: CGRect(x: 100, y: 100, width: 800, height: 600)
         )
 
-        let target = SlotEngine.targetFrame(for: snapshot, displays: [mainDisplay, sideDisplay])
+        let target = WindowGeometry.targetFrame(for: snapshot, displays: [mainDisplay, sideDisplay])
 
         XCTAssertEqual(target, CGRect(x: 1540, y: 100, width: 800, height: 600))
     }
@@ -71,7 +71,7 @@ final class WindowGeometryTests: XCTestCase {
             localFrame: CGRect(x: 200, y: 100, width: 800, height: 600)
         )
 
-        let target = SlotEngine.targetFrame(for: snapshot, displays: [mainDisplay])
+        let target = WindowGeometry.targetFrame(for: snapshot, displays: [mainDisplay])
 
         XCTAssertEqual(target, CGRect(x: 200, y: 100, width: 800, height: 600))
     }
@@ -83,7 +83,7 @@ final class WindowGeometryTests: XCTestCase {
             localFrame: CGRect(x: 2000, y: 200, width: 1200, height: 600)
         )
 
-        let target = SlotEngine.targetFrame(for: snapshot, displays: [mainDisplay, sideDisplay])
+        let target = WindowGeometry.targetFrame(for: snapshot, displays: [mainDisplay, sideDisplay])
 
         XCTAssertEqual(target, CGRect(x: 3440, y: 200, width: 1200, height: 600))
     }
@@ -95,7 +95,7 @@ final class WindowGeometryTests: XCTestCase {
             localFrame: CGRect(x: 0, y: 0, width: 2560, height: 1440)
         )
 
-        let target = SlotEngine.targetFrame(for: snapshot, displays: [mainDisplay])
+        let target = WindowGeometry.targetFrame(for: snapshot, displays: [mainDisplay])
 
         XCTAssertEqual(target, CGRect(x: 0, y: 0, width: 2560, height: 1440))
     }
@@ -107,7 +107,7 @@ final class WindowGeometryTests: XCTestCase {
             localFrame: CGRect(x: 2000, y: 100, width: 800, height: 600)
         )
 
-        let target = SlotEngine.targetFrame(for: snapshot, displays: [mainDisplay])
+        let target = WindowGeometry.targetFrame(for: snapshot, displays: [mainDisplay])
 
         XCTAssertEqual(target, CGRect(x: 640, y: 100, width: 800, height: 600))
     }
@@ -119,7 +119,7 @@ final class WindowGeometryTests: XCTestCase {
             localFrame: nil
         )
 
-        let target = SlotEngine.targetFrame(for: snapshot, displays: [mainDisplay])
+        let target = WindowGeometry.targetFrame(for: snapshot, displays: [mainDisplay])
 
         XCTAssertEqual(target, CGRect(x: -100, y: 850, width: 400, height: 300))
     }
@@ -131,7 +131,7 @@ final class WindowGeometryTests: XCTestCase {
             localFrame: nil
         )
 
-        let target = SlotEngine.targetFrame(for: snapshot, displays: [mainDisplay])
+        let target = WindowGeometry.targetFrame(for: snapshot, displays: [mainDisplay])
 
         XCTAssertEqual(target, CGRect(x: 1040, y: 600, width: 400, height: 300))
     }
@@ -143,7 +143,7 @@ final class WindowGeometryTests: XCTestCase {
             localFrame: CGRect(x: 100, y: 100, width: 800, height: 600)
         )
 
-        let target = SlotEngine.targetFrame(for: snapshot, displays: [])
+        let target = WindowGeometry.targetFrame(for: snapshot, displays: [])
 
         XCTAssertEqual(target, CGRect(x: 100, y: 100, width: 800, height: 600))
     }
@@ -180,7 +180,7 @@ final class WindowGeometryTests: XCTestCase {
             localFrame: CGRect(x: 100, y: 100, width: 800, height: 600)
         )
 
-        let target = SlotEngine.targetFrame(for: snapshot, displays: [brokenDisplay])
+        let target = WindowGeometry.targetFrame(for: snapshot, displays: [brokenDisplay])
 
         XCTAssertEqual(target, CGRect(x: 100, y: 100, width: 800, height: 600))
     }

@@ -16,6 +16,7 @@ enum DiagnosticsExporter {
             var architecture: String
             var accessibilityTrusted: Bool
             var accessibilityPermissionState: String
+            var launchAtLoginStatus: String
         }
 
         struct Display: Codable {
@@ -108,7 +109,8 @@ enum DiagnosticsExporter {
                 operatingSystemVersion: ProcessInfo.processInfo.operatingSystemVersionString,
                 architecture: systemArchitecture(),
                 accessibilityTrusted: AccessibilityManager.isTrusted(),
-                accessibilityPermissionState: String(describing: AccessibilityManager.permissionState())
+                accessibilityPermissionState: String(describing: AccessibilityManager.permissionState()),
+                launchAtLoginStatus: LaunchAtLogin.diagnosticStatus
             ),
             displays: displayReports,
             storedDocument: storedDocumentResult.document.map(summary),
@@ -118,12 +120,12 @@ enum DiagnosticsExporter {
         )
     }
 
+    @MainActor
     private static func loadStoredDocument() async -> (document: SlotStoreDocument?, error: String?) {
         do {
-            let store = try SlotStore()
-            return (try await store.load(), nil)
+            return (try await SlotEngine.shared().currentDocument(), nil)
         } catch {
-            return (nil, error.localizedDescription)
+            return (nil, redactedErrorDescription(error))
         }
     }
 
@@ -141,17 +143,21 @@ enum DiagnosticsExporter {
                 status: "failed",
                 windowCount: 0,
                 appBundleIdentifiers: [],
-                error: error.localizedDescription
+                error: redactedErrorDescription(error)
             )
         }
     }
 
-    private static func summary(for document: SlotStoreDocument) -> Report.StoredDocumentSummary {
-        Report.StoredDocumentSummary(
+    static func summary(for document: SlotStoreDocument) -> Report.StoredDocumentSummary {
+        var settings = document.settings
+        // The preference map contains physical display UUIDs; diagnostic exports
+        // intentionally describe displays using only index and geometry.
+        settings.preferredLayoutsByTopology = [:]
+        return Report.StoredDocumentSummary(
             version: document.version,
             layoutCount: document.slots.count,
             totalSavedWindowCount: document.slots.reduce(0) { $0 + $1.windows.count },
-            settings: document.settings,
+            settings: settings,
             layouts: document.slots.map { slot in
                 Report.StoredDocumentSummary.Layout(
                     id: slot.id,
@@ -161,6 +167,13 @@ enum DiagnosticsExporter {
                 )
             }
         )
+    }
+
+    /// Localized descriptions can contain paths or user-provided content.
+    /// Export only an error domain and code, never NSError.userInfo.
+    static func redactedErrorDescription(_ error: Error) -> String {
+        let error = error as NSError
+        return "\(error.domain) (\(error.code))"
     }
 
     private static func uniqueBundleIdentifiers(in windows: [WindowSnapshot]) -> [String] {

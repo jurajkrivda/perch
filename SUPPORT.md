@@ -49,6 +49,28 @@ automatic decision. Read it before reporting — it usually says exactly what
 happened ("topology unchanged", "no layout for this arrangement"). If your dock
 is slow, try raising the settle timeout in Settings.
 
+After a restart, also check **Launch at login** and its approval status in
+macOS Login Items. Save a layout while all intended displays are connected;
+Perch selects the most recently saved layout for that display arrangement.
+It restores saved positions, not an unsaved arrangement from before shutdown.
+Automatic mode restores without confirmation once the session is unlocked and
+displays have settled, even while you use the keyboard or mouse. Choose **Ask**
+if you want to approve each restore. Switching an open offer to Automatic
+applies that choice; switching to Off dismisses the offer.
+With **Open missing applications** off, closed applications remain closed.
+
+**Saved layouts need attention.** Perch could not read a saved-layout file and
+preserved the original. Open Settings and choose **Show Preserved Files**.
+Keep those files: closing the notice only adds `.acknowledged` to their names
+and does not delete them. The notice stays visible across restarts until dismissed.
+
+To restore a known valid backup, quit Perch, keep a copy of the current
+`~/Library/Application Support/Perch/` folder, then replace its `slots.json`
+with the valid backup and reopen Perch. Renaming a corrupt original back to
+`slots.json` does not repair its contents. If no valid backup is available,
+keep the originals for investigation. These files can contain window titles
+and layout names; review their contents before sharing them with support.
+
 **The download link is missing.** A public build exists only after a GitHub
 Release contains an asset named exactly `Perch.dmg`. Check the
 [Releases page](../../releases); source snapshots are not installable builds.

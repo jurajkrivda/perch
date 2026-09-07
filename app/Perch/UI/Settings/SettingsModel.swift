@@ -4,19 +4,9 @@ import Observation
 @MainActor
 @Observable
 final class SettingsModel {
-    private struct PendingBooleanSetting {
+    private struct PendingSetting<Value> {
         let revision: Int
-        let value: Bool
-    }
-
-    private struct PendingAutoRestoreModeSetting {
-        let revision: Int
-        let value: AutoRestoreMode
-    }
-
-    private struct PendingTimeIntervalSetting {
-        let revision: Int
-        let value: TimeInterval
+        let value: Value
     }
 
     var document = SlotStoreDocument()
@@ -24,6 +14,7 @@ final class SettingsModel {
     var newLayoutName = ""
     var isAccessibilityTrusted = AccessibilityManager.isTrusted()
     var launchAtLoginEnabled = LaunchAtLogin.isEnabled
+    private var launchAtLoginRegistrationStatus = LaunchAtLogin.registrationStatus
     var launchAtLoginError: String?
     var automaticUpdateChecksEnabled = true
     var showsMenuBarLabel = true
@@ -31,11 +22,16 @@ final class SettingsModel {
     var autoRestoreMode: AutoRestoreMode = .prompt
     var autoRestoreSettleTimeout: TimeInterval = 10
     var errorMessage: String?
+    var recoveryNotice: StoreRecoveryNotice?
+    var recoveryErrorMessage: String?
+    var isAcknowledgingRecovery = false
+    var currentTopology = DisplayManager.currentTopologyFingerprint()
+    var changingLayoutID: String?
     var accessibilityResetError: String?
     var hasRequestedAccessibilityPermission = AccessibilityManager.hasRequestedPermissionForCurrentApp()
     var localization = LocalizationManager.shared
 
-    private var slotEngine: SlotEngine?
+    var slotEngine: SlotEngine?
     private var accessibilityRefreshTask: Task<Void, Never>?
     private var documentRefreshTask: Task<Void, Never>?
     private var documentMutationTail: Task<Void, Never>?
@@ -44,10 +40,14 @@ final class SettingsModel {
     private var mutationState = SettingsMutationState()
     private var documentMutationRevision = 0
     private var settingsRevision = 0
-    private var pendingMenuBarLabel: PendingBooleanSetting?
-    private var pendingMissingApplications: PendingBooleanSetting?
-    private var pendingAutoRestoreMode: PendingAutoRestoreModeSetting?
-    private var pendingAutoRestoreSettleTimeout: PendingTimeIntervalSetting?
+    private var pendingMenuBarLabel: PendingSetting<Bool>?
+    private var pendingMissingApplications: PendingSetting<Bool>?
+    private var pendingAutoRestoreMode: PendingSetting<AutoRestoreMode>?
+    private var pendingAutoRestoreSettleTimeout: PendingSetting<TimeInterval>?
+
+    init(slotEngine: SlotEngine? = nil) {
+        self.slotEngine = slotEngine
+    }
 
     var selectedLanguage: AppLanguage {
         get { localization.selectedLanguage }
@@ -65,7 +65,7 @@ final class SettingsModel {
     /// Computed so the status text re-localizes whenever the view re-renders
     /// after a language change instead of caching one language's string.
     var launchAtLoginStatus: String {
-        LaunchAtLogin.statusDescription
+        LaunchAtLogin.statusDescription(for: launchAtLoginRegistrationStatus)
     }
 
     /// Must be called once before any CRUD method. Until it runs, `slotEngine` is nil and the CRUD methods intentionally no-op (mirrors the original SettingsView behavior).
@@ -93,11 +93,14 @@ final class SettingsModel {
 
         do {
             let loadedDocument = try await slotEngine.currentDocument()
+            let loadedRecoveryNotice = try await slotEngine.recoveryNotice()
             guard refreshState.shouldApply(generation: generation) else { return }
             let previousNames = Dictionary(uniqueKeysWithValues: document.slots.map { ($0.id, $0.name) })
             let previousDrafts = layoutNameDrafts
 
             document = loadedDocument
+            currentTopology = DisplayManager.currentTopologyFingerprint()
+            recoveryNotice = loadedRecoveryNotice
             applyDisplayedSettings()
             layoutNameDrafts = Dictionary(uniqueKeysWithValues: loadedDocument.slots.map { slot in
                 let previousName = previousNames[slot.id]
@@ -141,7 +144,7 @@ final class SettingsModel {
 
         enqueueDocumentMutation(
             operation: {
-                _ = try await slotEngine.createLayout(name: name)
+                _ = try await slotEngine.createLayoutFromCurrentWindows(name: name)
             },
             completion: { [weak self] succeeded in
                 guard let self else { return }
@@ -198,7 +201,7 @@ final class SettingsModel {
         )
     }
 
-    private func enqueueDocumentMutation(
+    func enqueueDocumentMutation(
         operation: @escaping @MainActor @Sendable () async throws -> Void,
         completion: @escaping @MainActor @Sendable (Bool) -> Void
     ) {
@@ -232,174 +235,86 @@ final class SettingsModel {
         document.effectiveRestoreHotkey(for: layout.id)
     }
 
+    func acknowledgeRecoveryNotice() {
+        guard let slotEngine, let recoveryNotice, !isAcknowledgingRecovery else { return }
+        isAcknowledgingRecovery = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { isAcknowledgingRecovery = false }
+            do {
+                try await slotEngine.acknowledgeRecoveryNotice(recoveryNotice)
+                await refreshDocument()
+                recoveryErrorMessage = nil
+            } catch {
+                recoveryErrorMessage = LocalizedErrorMessages.message(for: error)
+            }
+        }
+    }
+
     func effectiveHotkeyDisplay(for layout: Slot) -> String {
         effectiveHotkey(for: layout)?.displayString ?? L10n.text(.noRestoreShortcut)
     }
 
     func updateMenuBarLabelVisibility(_ isVisible: Bool) {
-        guard let slotEngine else { return }
-        let desiredValue = pendingMenuBarLabel?.value ?? document.settings.showsMenuBarLabel
-        guard isVisible != desiredValue else { return }
-
-        settingsRevision += 1
-        let revision = settingsRevision
-        pendingMenuBarLabel = PendingBooleanSetting(revision: revision, value: isVisible)
-        let previousWrite = settingsWriteTail
-        settingsWriteTail = Task { @MainActor [weak self] in
-            await previousWrite?.value
-            guard let self else { return }
-
-            do {
-                let settings = try await slotEngine.updateSettings { settings in
-                    settings.showsMenuBarLabel = isVisible
-                }
-                refreshState.invalidateLoads()
-                document.settings = settings
-                if pendingMenuBarLabel?.revision == revision {
-                    pendingMenuBarLabel = nil
-                }
-                applyDisplayedSettings()
-                if settingsRevision == revision {
-                    settingsWriteTail = nil
-                }
-            } catch {
-                errorMessage = LocalizedErrorMessages.message(for: error)
-                if pendingMenuBarLabel?.revision == revision {
-                    pendingMenuBarLabel = nil
-                }
-                await refreshDocument()
-                if settingsRevision == revision {
-                    settingsWriteTail = nil
-                }
-            }
-        }
+        enqueueSetting(value: isVisible, currentValue: document.settings.showsMenuBarLabel,
+                       pending: \.pendingMenuBarLabel) { $0.showsMenuBarLabel = isVisible }
     }
 
-    func updateMissingApplicationsRestoreBehavior(_ shouldOpenApplications: Bool) {
-        guard let slotEngine else { return }
-        let desiredValue = pendingMissingApplications?.value
-            ?? document.settings.opensMissingApplicationsOnRestore
-        guard shouldOpenApplications != desiredValue else { return }
-
-        settingsRevision += 1
-        let revision = settingsRevision
-        pendingMissingApplications = PendingBooleanSetting(
-            revision: revision,
-            value: shouldOpenApplications
-        )
-        let previousWrite = settingsWriteTail
-        settingsWriteTail = Task { @MainActor [weak self] in
-            await previousWrite?.value
-            guard let self else { return }
-
-            do {
-                let settings = try await slotEngine.updateSettings { settings in
-                    settings.opensMissingApplicationsOnRestore = shouldOpenApplications
-                }
-                refreshState.invalidateLoads()
-                document.settings = settings
-                if pendingMissingApplications?.revision == revision {
-                    pendingMissingApplications = nil
-                }
-                applyDisplayedSettings()
-                if settingsRevision == revision {
-                    settingsWriteTail = nil
-                }
-            } catch {
-                errorMessage = LocalizedErrorMessages.message(for: error)
-                if pendingMissingApplications?.revision == revision {
-                    pendingMissingApplications = nil
-                }
-                await refreshDocument()
-                if settingsRevision == revision {
-                    settingsWriteTail = nil
-                }
-            }
-        }
+    func updateMissingApplicationsRestoreBehavior(_ shouldOpen: Bool) {
+        enqueueSetting(value: shouldOpen, currentValue: document.settings.opensMissingApplicationsOnRestore,
+                       pending: \.pendingMissingApplications) { $0.opensMissingApplicationsOnRestore = shouldOpen }
     }
 
     func updateAutoRestoreMode(_ mode: AutoRestoreMode) {
-        guard let slotEngine else { return }
-        let desiredValue = pendingAutoRestoreMode?.value ?? document.settings.autoRestoreMode
-        guard mode != desiredValue else { return }
-
-        settingsRevision += 1
-        let revision = settingsRevision
-        pendingAutoRestoreMode = PendingAutoRestoreModeSetting(revision: revision, value: mode)
-        let previousWrite = settingsWriteTail
-        settingsWriteTail = Task { @MainActor [weak self] in
-            await previousWrite?.value
-            guard let self else { return }
-
-            do {
-                let settings = try await slotEngine.updateSettings { settings in
-                    settings.autoRestoreMode = mode
-                }
-                refreshState.invalidateLoads()
-                document.settings = settings
-                if pendingAutoRestoreMode?.revision == revision {
-                    pendingAutoRestoreMode = nil
-                }
-                applyDisplayedSettings()
-                if settingsRevision == revision {
-                    settingsWriteTail = nil
-                }
-            } catch {
-                errorMessage = LocalizedErrorMessages.message(for: error)
-                if pendingAutoRestoreMode?.revision == revision {
-                    pendingAutoRestoreMode = nil
-                }
-                await refreshDocument()
-                if settingsRevision == revision {
-                    settingsWriteTail = nil
-                }
-            }
-        }
+        enqueueSetting(value: mode, currentValue: document.settings.autoRestoreMode,
+                       pending: \.pendingAutoRestoreMode) { $0.autoRestoreMode = mode }
     }
 
     func updateAutoRestoreSettleTimeout(_ timeout: TimeInterval) {
-        guard let slotEngine else { return }
-        let clampedTimeout = min(
-            max(timeout, SlotStoreDocument.autoRestoreSettleTimeoutRange.lowerBound),
-            SlotStoreDocument.autoRestoreSettleTimeoutRange.upperBound
-        )
-        let desiredValue = pendingAutoRestoreSettleTimeout?.value
-            ?? document.settings.autoRestoreSettleTimeout
-        guard clampedTimeout != desiredValue else { return }
+        guard timeout.isFinite else { return }
+        let range = SlotStoreDocument.autoRestoreSettleTimeoutRange
+        let value = min(max(timeout, range.lowerBound), range.upperBound)
+        enqueueSetting(value: value, currentValue: document.settings.autoRestoreSettleTimeout,
+                       pending: \.pendingAutoRestoreSettleTimeout) { $0.autoRestoreSettleTimeout = value }
+    }
 
-        settingsRevision += 1
+    /// Serialize writes and keep each control's latest optimistic value while
+    /// earlier writes finish. A failed write must leave its error visible even
+    /// when reloading the persisted document succeeds.
+    private func enqueueSetting<Value: Equatable & Sendable>(
+        value: Value,
+        currentValue: Value,
+        pending: ReferenceWritableKeyPath<SettingsModel, PendingSetting<Value>?>,
+        update: @escaping @Sendable (inout PerchSettings) -> Void
+    ) {
+        guard let slotEngine,
+              value != (self[keyPath: pending]?.value ?? currentValue) else { return }
+        settingsRevision &+= 1
         let revision = settingsRevision
-        pendingAutoRestoreSettleTimeout = PendingTimeIntervalSetting(
-            revision: revision,
-            value: clampedTimeout
-        )
+        self[keyPath: pending] = PendingSetting(revision: revision, value: value)
+        applyDisplayedSettings()
         let previousWrite = settingsWriteTail
         settingsWriteTail = Task { @MainActor [weak self] in
             await previousWrite?.value
             guard let self else { return }
-
+            defer {
+                if settingsRevision == revision { settingsWriteTail = nil }
+            }
             do {
-                let settings = try await slotEngine.updateSettings { settings in
-                    settings.autoRestoreSettleTimeout = clampedTimeout
-                }
+                document.settings = try await slotEngine.updateSettings(update)
                 refreshState.invalidateLoads()
-                document.settings = settings
-                if pendingAutoRestoreSettleTimeout?.revision == revision {
-                    pendingAutoRestoreSettleTimeout = nil
+                if self[keyPath: pending]?.revision == revision {
+                    self[keyPath: pending] = nil
                 }
                 applyDisplayedSettings()
-                if settingsRevision == revision {
-                    settingsWriteTail = nil
-                }
+                errorMessage = nil
             } catch {
-                errorMessage = LocalizedErrorMessages.message(for: error)
-                if pendingAutoRestoreSettleTimeout?.revision == revision {
-                    pendingAutoRestoreSettleTimeout = nil
+                let message = LocalizedErrorMessages.message(for: error)
+                if self[keyPath: pending]?.revision == revision {
+                    self[keyPath: pending] = nil
                 }
                 await refreshDocument()
-                if settingsRevision == revision {
-                    settingsWriteTail = nil
-                }
+                errorMessage = message
             }
         }
     }
@@ -416,7 +331,10 @@ final class SettingsModel {
     }
 
     func refreshLaunchAtLoginStatus() {
-        launchAtLoginEnabled = LaunchAtLogin.isEnabled
+        // Pending approval and enabled both keep the toggle on, but the status
+        // label must still refresh when macOS changes between those states.
+        launchAtLoginRegistrationStatus = LaunchAtLogin.registrationStatus
+        launchAtLoginEnabled = LaunchAtLogin.isRegistrationActive(launchAtLoginRegistrationStatus)
     }
 
     func updateAutomaticUpdateChecks(_ isEnabled: Bool) {
