@@ -202,6 +202,10 @@ extension AutoRestoreCoordinator {
         trigger: EnvironmentChangeReason
     ) -> Bool {
         guard document.settings.autoRestoreMode != .off,
+              AutoRestorePolicy.selectedLayout(
+                slots: document.slots, topology: expectedTopology,
+                preferences: document.settings.preferredLayoutsByTopology
+              )?.id == layoutID,
               document.slots.contains(where: {
                   $0.id == layoutID && !$0.windows.isEmpty &&
                       $0.capturedTopology?.matchesIdentity(of: expectedTopology) == true

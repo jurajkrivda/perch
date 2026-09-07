@@ -243,6 +243,48 @@ final class AutoRestoreIntegrationTests: XCTestCase {
         XCTAssertEqual(fixture.presentation.lastDecision, .autoRestoreDecisionDisabled)
     }
 
+    func testChangingPreferredLayoutReplacesAnOpenOfferAndInvalidatesItsCallback() async throws {
+        let fixture = try await AutoRestoreFixture(mode: .prompt)
+        defer { fixture.stop() }
+        fixture.start()
+        try await waitUntil { fixture.presentation.currentPrompt != nil }
+        let previousPrompt = try XCTUnwrap(fixture.presentation.currentPrompt)
+        try await fixture.engine.store.update { document in
+            var preferred = document.slots[0]
+            preferred.id = "focus"
+            preferred.name = "Focus"
+            document.slots.append(preferred)
+        }
+        try await fixture.engine.setPreferredLayout("focus", for: fixture.topology)
+        try await waitUntil { fixture.presentation.currentPrompt?.layoutName == "Focus" }
+        previousPrompt.onConfirm()
+        XCTAssertEqual(fixture.presentation.restoreCount, 0)
+        fixture.presentation.currentPrompt?.onConfirm()
+        try await waitUntil { fixture.presentation.results.count == 1 }
+        XCTAssertEqual(fixture.presentation.results[0].slotID, "focus")
+    }
+
+    func testPreferredLayoutChangedBeforeAutomaticCommitUsesTheNewChoice() async throws {
+        let fixture = try await AutoRestoreFixture(mode: .automatic)
+        defer { fixture.stop() }
+        let gate = AuditAsyncGate()
+        fixture.presentation.restoreGate = gate
+        fixture.start()
+        try await waitUntil { fixture.presentation.restoreCount == 1 }
+        try await fixture.engine.store.update { document in
+            var preferred = document.slots[0]
+            preferred.id = "focus"
+            preferred.name = "Focus"
+            document.slots.append(preferred)
+        }
+        try await fixture.engine.setPreferredLayout("focus", for: fixture.topology)
+        try await waitUntil { fixture.presentation.restoreCount == 2 }
+        await gate.open()
+        try await waitUntil { fixture.presentation.finishedCount == 2 }
+        XCTAssertEqual(fixture.presentation.results.map(\.slotID), ["focus"])
+        XCTAssertTrue(fixture.presentation.prompts.isEmpty)
+    }
+
     private func waitUntil(_ condition: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(2))
         while !condition(), ContinuousClock.now < deadline {

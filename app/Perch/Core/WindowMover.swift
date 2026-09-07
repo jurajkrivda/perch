@@ -72,6 +72,15 @@ actor WindowMover {
         bundleIdentifier: String,
         strictness: MatchStrictness
     ) async throws -> [WindowBatchMoveResult] {
+        try await move(requests: requests, bundleIdentifier: bundleIdentifier, strictness: strictness, observer: { _ in })
+    }
+
+    func move(
+        requests: [WindowBatchMoveRequest],
+        bundleIdentifier: String,
+        strictness: MatchStrictness,
+        observer: @escaping WindowMoveObserver
+    ) async throws -> [WindowBatchMoveResult] {
         try Task.checkCancellation()
         guard !requests.isEmpty else {
             return []
@@ -143,6 +152,13 @@ actor WindowMover {
                 let selectedWindow = windows[selection.index]
                 let restoredFrame: CGRect
                 if request.shouldMove {
+                    if let originalFrame = selectedWindow.candidate.frame {
+                        await observer(.willMove(
+                            snapshotID: request.snapshot.id, frame: originalFrame,
+                            reservation: WindowMatcher.reservation(for: selectedWindow.candidate)
+                        ))
+                    }
+                    try Task.checkCancellation()
                     restoredFrame = try await moveWindow(
                         selectedWindow,
                         to: request.frame,
@@ -177,6 +193,7 @@ actor WindowMover {
                     error: .frameWriteFailed
                 ))
             }
+            if let result = results.last { await observer(.completed(result)) }
         }
 
         return results

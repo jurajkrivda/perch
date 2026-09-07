@@ -8,9 +8,10 @@ in Git history. Physical restart/dock verification for the audit fixes is pendin
 
 Perch restores an explicitly saved layout. It does not continuously record the
 current arrangement, restore unsaved documents, or recreate a previous session's
-tabs. When more than one layout matches the connected displays, the most recently
-saved layout wins. An empty newest matching layout does not cause fallback to an
-older layout.
+tabs. An explicit preference wins among nonempty layouts matching the connected
+displays; otherwise the most recently saved nonempty matching layout wins. Empty
+placeholders never hide a usable layout. Preferences belong to one display
+identity and do not follow a layout saved on a different display arrangement.
 
 Modes:
 
@@ -50,7 +51,8 @@ those windows is independent of the setting that launches closed applications.
    observed sleep cycle and no-op unlock/display callbacks do not create a new
    completed offer for the same topology.
 7. Policy matches the set of display UUIDs and the main display, ignoring bounds.
-   It chooses the most recently saved matching layout and checks the selected mode.
+   It chooses the preferred matching layout, or the most recently saved usable
+   match, and checks the selected mode.
 8. Immediately before automatic or prompt-confirmed movement, the engine loads
    a fresh document. The coordinator checks the current mode, layout eligibility,
    event generation, session and topology again.
@@ -62,6 +64,8 @@ Switching an outstanding offer from Ask to Automatic dismisses it and restores
 the current matching layout without a click, provided the session and display
 configuration are still ready. Changing modes does not permit a hidden or
 unsettled restore, and stale offer callbacks cannot start a second operation.
+Changing the preferred layout replaces an outstanding offer or uncommitted
+automatic attempt; its old confirmation cannot restore the previous choice.
 
 ## Window-operation invariants
 
@@ -79,10 +83,30 @@ unsettled restore, and stale offer callbacks cannot start a second operation.
   cancellable. Late callbacks cannot resume window restoration, although macOS
   may still finish opening the application after that timeout.
 - A committed automatic restore finishes and reports partial failures even if a
-  later event arrives. Quitting waits for that operation. Individual OS calls
+  later event arrives. The user can explicitly stop remaining work from the menu
+  or progress window; completed moves remain reported and can be undone. Quitting waits for that operation. Individual OS calls
   are external dependencies; the polling deadline is not a global quit deadline.
 - Layout selection uses tolerant identity; remapping and capture consistency
   use full display geometry. These comparisons serve different purposes.
+
+## Report actions and undo
+
+The shared in-memory `RestoreSession` streams verified progress for menu, hotkey,
+settings, and automatic restores. Manual restores open the progress window;
+automatic restores remain unobtrusive in the menu bar.
+
+- Retry uses the original saved layout and refuses changed window data or display
+  geometry. Successful siblings participate only as exact reservations and never
+  move again during a user retry, including topology remaps within that retry.
+- A per-window open-and-retry action may launch that window's app for this attempt
+  without changing the global automatic-launch preference.
+- Reassignment captures currently open windows, validates the choice again, and
+  changes only a saved window's identity. Destination geometry is preserved.
+- Undo records original frames before writing, including partially completed
+  writes. It requires the same complete display geometry and uses exact live
+  process/window reservations, never a title fallback or an app launch.
+- Undo remains in memory until the next full restore or process exit. Successful
+  undos are removed; unavailable windows remain eligible for another undo attempt.
 
 ## Diagnostics
 

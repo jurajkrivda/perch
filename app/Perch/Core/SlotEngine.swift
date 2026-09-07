@@ -8,12 +8,15 @@ extension Notification.Name {
 
 @MainActor
 final class SlotEngine {
-    private let store: SlotStore
-    private let restorer: LayoutWindowRestorer
-    private let snapshotter: any WindowSnapshotting
-    private let accessibilityTrusted: @MainActor () -> Bool
-    private let displayProvider: @MainActor () -> [DisplayInfo]
-    private let capturedTopologyProvider: @MainActor () -> DisplayTopologyFingerprint?
+    let store: SlotStore
+    let restorer: LayoutWindowRestorer
+    let windowMover: any WindowMoving
+    let snapshotter: any WindowSnapshotting
+    let accessibilityTrusted: @MainActor () -> Bool
+    let displayProvider: @MainActor () -> [DisplayInfo]
+    let capturedTopologyProvider: @MainActor () -> DisplayTopologyFingerprint?
+    let restoreSession = RestoreSession()
+    var activeRestoreTask: Task<SlotOperationResult, Error>?
     private var isPerformingWindowOperation = false
 
     init(
@@ -35,6 +38,7 @@ final class SlotEngine {
             launchRetryIntervalNanoseconds: launchRetryIntervalNanoseconds
         )
         self.store = store
+        self.windowMover = windowMover
         self.snapshotter = snapshotter
         self.accessibilityTrusted = accessibilityTrusted
         self.displayProvider = displayProvider
@@ -118,19 +122,9 @@ final class SlotEngine {
 
     func save(slotID: String) async throws -> SlotOperationResult {
         try await performExclusiveWindowOperation {
-            try Task.checkCancellation()
-            let topologyBeforeCapture = capturedTopologyProvider()
-            let snapshots = try await snapshotter.captureCurrentWindows()
-            try Task.checkCancellation()
-            let capturedTopology = capturedTopologyProvider()
-            guard topologyBeforeCapture == capturedTopology else {
-                throw SlotEngineError.displayConfigurationChanged
-            }
-            if capturedTopology == nil {
-                AppLog.display.warning(
-                    "Saved layout without automatic topology matching because the display identity is incomplete"
-                )
-            }
+            let capture = try await captureLayoutWindows()
+            let snapshots = capture.windows
+            let capturedTopology = capture.topology
             let savedAt = Date()
 
             let document = try await store.update { document in
@@ -156,59 +150,6 @@ final class SlotEngine {
         }
     }
 
-    func restore(
-        slotID: String,
-        preflight: RestorePreflight? = nil
-    ) async throws -> SlotOperationResult {
-        try await performExclusiveWindowOperation {
-            try Task.checkCancellation()
-            var document = try await store.load()
-            try Task.checkCancellation()
-
-            guard accessibilityTrusted() else {
-                throw WindowMoverError.accessibilityPermissionMissing
-            }
-
-            await DisplayStabilizer.shared.waitForStable(
-                timeout: document.settings.stabilizationTimeout
-            )
-            if preflight != nil {
-                // Settings or saved layouts may change during stabilization.
-                // Validate and restore the same fresh document at commit time.
-                document = try await store.load()
-            }
-            try validateRestorePreflight(preflight, document: document)
-            let slotIndex = try Self.index(of: slotID, in: document)
-            let slot = document.slots[slotIndex]
-
-            var reportsBySnapshotID: [String: RestoreWindowReport] = [:]
-
-            for group in LayoutWindowRestorer.snapshotGroupsPreservingOrder(slot.windows) {
-                let reports = try await restorer.restore(
-                    snapshots: group.snapshots,
-                    settings: document.settings,
-                    displays: displayProvider()
-                )
-                for report in reports {
-                    reportsBySnapshotID[report.id] = report
-                }
-            }
-
-            let reports = slot.windows.compactMap { reportsBySnapshotID[$0.id] }
-            let restored = reports.filter(\.isSuccess).count
-
-            AppLog.windows.info("Restored \(restored) of \(slot.windows.count) windows from slot \(slot.id, privacy: .public)")
-
-            return SlotOperationResult(
-                slotID: slot.id,
-                slotName: slot.name,
-                succeeded: restored,
-                total: slot.windows.count,
-                details: reports
-            )
-        }
-    }
-
     func currentDocument() async throws -> SlotStoreDocument {
         try await store.load()
     }
@@ -225,7 +166,7 @@ final class SlotEngine {
     /// Serializes window-touching operations: overlapping saves/restores would move
     /// the same windows twice and interleave their reports, so later requests are
     /// rejected instead of queued (hotkey auto-repeat would otherwise pile up).
-    private func performExclusiveWindowOperation<T: Sendable>(
+    func performExclusiveWindowOperation<T: Sendable>(
         _ operation: () async throws -> T
     ) async throws -> T {
         guard !isPerformingWindowOperation else {
@@ -246,7 +187,7 @@ final class SlotEngine {
         return document.slots[slotIndex].id
     }
 
-    private nonisolated static func index(of slotID: String, in document: SlotStoreDocument) throws -> Int {
+    nonisolated static func index(of slotID: String, in document: SlotStoreDocument) throws -> Int {
         guard let index = document.slots.firstIndex(where: { $0.id == slotID }) else {
             throw SlotEngineError.slotNotFound(slotID)
         }
@@ -254,7 +195,7 @@ final class SlotEngine {
         return index
     }
 
-    private func validatedLayoutName(_ name: String) throws -> String {
+    func validatedLayoutName(_ name: String) throws -> String {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmedName.isEmpty else {
@@ -264,11 +205,11 @@ final class SlotEngine {
         return trimmedName
     }
 
-    private func notifyDocumentDidChange() {
+    func notifyDocumentDidChange() {
         NotificationCenter.default.post(name: .perchDocumentDidChange, object: self)
     }
 
-    private func validateRestorePreflight(_ preflight: RestorePreflight?, document: SlotStoreDocument) throws {
+    func validateRestorePreflight(_ preflight: RestorePreflight?, document: SlotStoreDocument) throws {
         try Task.checkCancellation()
         guard preflight?(document) ?? true else {
             throw SlotEngineError.restorePreflightRejected

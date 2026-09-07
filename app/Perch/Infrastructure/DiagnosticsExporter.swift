@@ -149,11 +149,15 @@ enum DiagnosticsExporter {
     }
 
     static func summary(for document: SlotStoreDocument) -> Report.StoredDocumentSummary {
-        Report.StoredDocumentSummary(
+        var settings = document.settings
+        // The preference map contains physical display UUIDs; diagnostic exports
+        // intentionally describe displays using only index and geometry.
+        settings.preferredLayoutsByTopology = [:]
+        return Report.StoredDocumentSummary(
             version: document.version,
             layoutCount: document.slots.count,
             totalSavedWindowCount: document.slots.reduce(0) { $0 + $1.windows.count },
-            settings: document.settings,
+            settings: settings,
             layouts: document.slots.map { slot in
                 Report.StoredDocumentSummary.Layout(
                     id: slot.id,

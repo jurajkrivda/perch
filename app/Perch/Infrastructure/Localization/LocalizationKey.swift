@@ -144,4 +144,51 @@ enum LocalizationKey: String, CaseIterable, Sendable {
     case updatesSectionTitle
     case windowLabel
     case windowsAndShortcutFormat
+    case captureCurrentLayout
+    case captureLayoutHelp
+    case automaticLayoutTitle
+    case latestMatchingLayout
+    case selectedAutomaticLayoutFormat
+    case noMatchingSavedLayout
+    case preferredForDisplays
+    case useForAutomaticRestore
+    case followLatestSaved
+    case lastSavedLabel
+    case savedDisplaysFormat
+    case layoutDetails
+    case layoutHistory
+    case noLayoutHistory
+    case historyExplanation
+    case restoreVersion
+    case historyRestored
+    case unknownDisplayArrangement
+    case assignOpenWindow
+    case chooseOpenWindow
+    case windowReassigned
+    case noOpenWindowsForApp
+    case useThisWindow
+    case retryRemaining
+    case retryWindow
+    case openAndRetry
+    case restoreActivity
+    case stopRestore
+    case stoppingRestore
+    case waitingForDisplays
+    case workingOnApplicationFormat
+    case restoreProgressFormat
+    case undoLastRestore
+    case undoExplanation
+    case undoResults
+    case outcomePending
+    case outcomeCancelled
+    case noRestoreYet
+    case reportHelp
+    case closeButton
+    case noWindowsToCapture
+    case layoutChangedSinceRestore
+    case repairWindowUnavailable
+    case nothingToUndo
+    case undoDisplayConfigurationChanged
+    case windowAlreadyAssigned
+    case untitledWindow
 }

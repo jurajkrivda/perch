@@ -127,6 +127,12 @@ actor SlotStore {
         )
 
         let data = try encoder.encode(document)
+        let history = LayoutHistory(storeURL: fileURL, fileManager: fileManager)
+        if let previousData = try? Data(contentsOf: fileURL),
+           let previous = try? decodeAndMigrate(previousData).document,
+           (try? previous.validate()) != nil {
+            try history.preserveChanges(from: previous, to: document)
+        }
         let temporaryURL = fileURL
             .deletingLastPathComponent()
             .appendingPathComponent("\(fileURL.lastPathComponent).tmp-\(UUID().uuidString)")
@@ -146,6 +152,9 @@ actor SlotStore {
             [.posixPermissions: Self.storeFilePermissions],
             ofItemAtPath: fileURL.path
         )
+        do { try history.prune() } catch {
+            AppLog.persistence.warning("Could not prune layout history: \(error.localizedDescription, privacy: .private)")
+        }
     }
 
     @discardableResult
@@ -153,19 +162,26 @@ actor SlotStore {
         var document = try load()
         try mutate(&document)
         document.reconcileDisabledDefaultSaveHotkeys()
+        document.reconcileLayoutPreferences()
         try save(document)
         return document
     }
 
-    func createLayout(name: String) throws -> Slot {
+    func createLayout(
+        name: String, windows: [WindowSnapshot] = [],
+        topology: DisplayTopologyFingerprint? = nil, savedAt: Date? = nil
+    ) throws -> Slot {
         var document = try load()
         document.materializeEffectiveRestoreHotkeys()
         let defaultRestoreHotkey = HotkeyBinding.defaultRestore(for: document.slots.count)
         let slot = Slot(
             id: UUID().uuidString.lowercased(),
             name: name,
+            lastSaved: savedAt,
             restoreHotkey: defaultRestoreHotkey,
-            restoreHotkeyDisabled: defaultRestoreHotkey == nil
+            restoreHotkeyDisabled: defaultRestoreHotkey == nil,
+            windows: windows,
+            capturedTopology: topology
         )
 
         document.slots.append(slot)
@@ -192,6 +208,7 @@ actor SlotStore {
         document.materializeEffectiveRestoreHotkeys()
         document.slots.remove(at: slotIndex)
         document.reconcileDisabledDefaultSaveHotkeys()
+        document.reconcileLayoutPreferences()
         try save(document)
     }
 
@@ -199,6 +216,31 @@ actor SlotStore {
         let document = SlotStoreDocument()
         try save(document)
         return document
+    }
+
+    func layoutHistory(layoutID: String? = nil) throws -> [LayoutRevision] {
+        try LayoutHistory(storeURL: fileURL, fileManager: fileManager).revisions(layoutID: layoutID)
+    }
+
+    func restoreRevision(id: String) throws {
+        guard let revision = try layoutHistory().first(where: { $0.id == id }) else {
+            throw StoreError.layoutNotFound(id)
+        }
+        try update { document in
+            if let index = document.slots.firstIndex(where: { $0.id == revision.layout.id }) {
+                // Version history restores captured windows; names and shortcuts
+                // are current preferences and should survive the recovery.
+                document.slots[index].windows = revision.layout.windows
+                document.slots[index].capturedTopology = revision.layout.capturedTopology
+                document.slots[index].lastSaved = revision.layout.lastSaved
+            } else {
+                document.materializeEffectiveRestoreHotkeys()
+                var recovered = revision.layout
+                recovered.restoreHotkey = nil
+                recovered.restoreHotkeyDisabled = true
+                document.slots.append(recovered)
+            }
+        }
     }
 
     private func index(of layoutID: String, in document: SlotStoreDocument) throws -> Int {

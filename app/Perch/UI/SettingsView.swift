@@ -33,6 +33,9 @@ struct SettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: .perchDocumentDidChange)) { _ in
             model.scheduleDocumentRefresh()
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+            model.currentTopology = DisplayManager.currentTopologyFingerprint()
+        }
     }
 }
 

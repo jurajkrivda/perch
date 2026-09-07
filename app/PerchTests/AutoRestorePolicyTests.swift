@@ -305,7 +305,7 @@ final class AutoRestorePolicyTests: XCTestCase {
         )
     }
 
-    func testMostRecentMatchingLayoutBeingEmptyDoesNotFallBackToOlderLayout() {
+    func testEmptyLayoutDoesNotHideAnOlderUsableLayout() {
         let topology = makeTopology(uuid: "current")
         let populated = makeSlot(
             id: "populated",
@@ -324,7 +324,7 @@ final class AutoRestorePolicyTests: XCTestCase {
 
         XCTAssertEqual(
             AutoRestorePolicy.decide(input),
-            .doNothing(reason: "layout is empty")
+            .prompt(layoutID: "populated", layoutName: "Populated")
         )
     }
 

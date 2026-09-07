@@ -44,6 +44,7 @@ final class AutoRestoreCoordinator {
     var decisionContextState = AutoRestoreDecisionContextState()
     var triggerGeneration = 0
     private var settleTimeout: TimeInterval = 10
+    private var preferredLayoutsByTopology: [String: String] = [:]
     var isSessionVisible = true
     var isStarted = false
 
@@ -286,7 +287,8 @@ final class AutoRestoreCoordinator {
                 currentTopology: currentTopology,
                 topologyAtLastDecision: attemptState.topologyAtLastDecision,
                 slots: document.slots,
-                alreadyPromptedForCurrentTopology: attemptState.alreadyPromptedForCurrentTopology
+                alreadyPromptedForCurrentTopology: attemptState.alreadyPromptedForCurrentTopology,
+                preferredLayoutsByTopology: document.settings.preferredLayoutsByTopology
             ))
 
             let pendingAttempt = attemptState.record(
@@ -394,6 +396,10 @@ final class AutoRestoreCoordinator {
             let document = try await slotEngine.currentDocument()
             guard isStarted else { return }
             settleTimeout = document.settings.autoRestoreSettleTimeout
+            let identity = currentTopology()?.identity ?? ""
+            let preferredLayoutChanged = preferredLayoutsByTopology[identity]
+                != document.settings.preferredLayoutsByTopology[identity]
+            preferredLayoutsByTopology = document.settings.preferredLayoutsByTopology
             if document.settings.autoRestoreMode == .off, attemptState.pendingAttempt != nil {
                 let trigger = decisionContextState.context?.reason
                 _ = attemptState.invalidatePending()
@@ -411,11 +417,11 @@ final class AutoRestoreCoordinator {
                         diagnosticCode: "do-nothing:disabled", trigger: trigger
                     )
                 }
-            } else if document.settings.autoRestoreMode == .automatic,
-                      let pending = attemptState.pendingAttempt, pending.kind == .prompt,
-                      let context = decisionContextState.context {
+            } else if let pending = attemptState.pendingAttempt,
+                      let context = decisionContextState.context,
+                      preferredLayoutChanged || (document.settings.autoRestoreMode == .automatic && pending.kind == .prompt) {
                 // A visible offer was already settled. Honor the newly selected
-                // mode and invalidate its old confirmation callback. A changed
+                // mode or layout choice and invalidate its old callback. A changed
                 // or hidden environment must settle again through the observer.
                 let canEvaluateNow = isSessionVisible && pending.generation == triggerGeneration &&
                     attemptState.topologyAtLastDecision == currentTopology()

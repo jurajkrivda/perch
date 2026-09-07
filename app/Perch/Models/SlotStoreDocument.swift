@@ -200,6 +200,14 @@ struct SlotStoreDocument: Codable, Equatable, Sendable {
             .sorted(by: Self.hotkeySortOrder)
     }
 
+    mutating func reconcileLayoutPreferences() {
+        settings.preferredLayoutsByTopology = settings.preferredLayoutsByTopology.filter { identity, layoutID in
+            slots.contains {
+                $0.id == layoutID && !$0.windows.isEmpty && $0.capturedTopology?.identity == identity
+            }
+        }
+    }
+
     func firstHotkeyConflict() -> HotkeyConflict? {
         for slot in slots {
             guard let effectiveHotkey = effectiveRestoreHotkey(for: slot.id) else {
