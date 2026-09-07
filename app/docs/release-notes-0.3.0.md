@@ -1,5 +1,18 @@
 # Perch 0.3.0
 
+## Automatic restore reliability
+
+- Startup now evaluates saved layouts even when login and display notifications
+  arrived before Perch launched. Wake and dock events are coalesced to avoid
+  duplicate restores.
+- Automatic mode restores without a confirmation prompt, including while typing
+  or moving the pointer. Changing Ask to Automatic applies an outstanding offer;
+  changing to Off dismisses it.
+- Already-running apps receive time to recreate their windows. Fresh settings,
+  session visibility and display checks prevent stale automatic restores.
+- Hardened layout persistence and recovery notices, bounded application launch
+  waits, and the Sparkle 2.9.6 update improve reliability and update security.
+
 ## Restore controls
 
 - A live progress and results window shows individual saved windows, completed
