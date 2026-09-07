@@ -14,6 +14,11 @@ not by itself indicate that a public release has been published.
 - DMG notarization: `618059bd-bd6e-4e89-bc41-57e3dcec17fb`, Accepted.
 - Stapler validation, deep strict code-signature verification, and Gatekeeper
   assessment passed for the distribution artifact.
+- Read-only DMG mounting verified the app version/build, Applications shortcut,
+  LICENSE, NOTICE, and bundled Sparkle license. The installed executable is
+  byte-identical to the one inside the notarized DMG.
+- A draft GitHub Release contains exactly one `Perch.dmg` asset. GitHub reports
+  the same SHA-256 and its size is 4,506,554 bytes.
 
 ## Automated tests
 
@@ -36,11 +41,17 @@ not by itself indicate that a public release has been published.
   input. The resulting restores each moved 7 of 11 saved windows; one saved
   application was closed, two matches were ambiguous, and one window was absent.
 - The saved-layout file remained byte-identical after these checks.
-- An idle startup with no confirmation is still being checked before publication.
+- A third startup followed 12 seconds without keyboard or pointer input. At
+  15:10:18 CEST the live application recorded a `restore` decision for
+  `applicationLaunch`, without a confirmation prompt. It completed at 15:10:35,
+  moving 6 of 11 saved windows. Two saved applications were now closed, two
+  window matches were ambiguous, and one window was absent. This verifies the
+  fully automatic startup path with actual Accessibility window operations.
 
 ## Remaining release checks
 
-- Remote CI and protected-branch review.
+- [PR #5](https://github.com/jurajkrivda/perch/pull/5): remote CI and
+  protected-branch review.
 - Final GitHub Release, uploaded-asset verification, and Sparkle feed deployment.
 - Physical cold boot, sleep/wake and dock changes, minimum macOS 14 and Intel
   runtime remain outside this machine's completed verification. The full matrix
