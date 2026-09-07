@@ -11,7 +11,7 @@ extension Notification.Name {
 actor DisplayStabilizer {
     static let shared = DisplayStabilizer()
 
-    private var lastChangeTime = Date.distantPast
+    private var lastChangeTime: ContinuousClock.Instant?
     private var isRegistered = false
 
     func start() {
@@ -29,40 +29,49 @@ actor DisplayStabilizer {
     }
 
     func markChanged() {
-        lastChangeTime = Date()
+        lastChangeTime = ContinuousClock.now
         AppLog.display.debug("Display configuration changed")
     }
 
-    func waitForStable(quietPeriod: TimeInterval = 1.0, timeout: TimeInterval = 3.0) async {
+    func waitAfterChange(quietPeriod: TimeInterval, timeout: TimeInterval) async -> Bool {
+        markChanged()
+        return await waitForStable(quietPeriod: quietPeriod, timeout: timeout)
+    }
+
+    @discardableResult
+    func waitForStable(quietPeriod: TimeInterval = 1.0, timeout: TimeInterval = 3.0) async -> Bool {
         start()
 
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = ContinuousClock.now.advanced(by: .seconds(timeout))
 
-        while Date() < deadline {
+        while !Task.isCancelled {
             guard !Task.isCancelled else {
                 AppLog.display.debug("Cancelled display stabilization wait")
-                return
+                return false
             }
 
-            if Date().timeIntervalSince(lastChangeTime) >= quietPeriod {
+            if lastChangeTime.map({ $0.duration(to: .now) >= .seconds(quietPeriod) }) ?? true {
                 AppLog.display.debug("Display configuration stable")
-                return
+                return true
             }
+
+            guard ContinuousClock.now < deadline else { break }
 
             do {
                 try await Task.sleep(for: .milliseconds(100))
             } catch {
                 AppLog.display.debug("Cancelled display stabilization wait")
-                return
+                return false
             }
         }
 
         guard !Task.isCancelled else {
             AppLog.display.debug("Cancelled display stabilization wait")
-            return
+            return false
         }
 
         AppLog.display.warning("Timed out waiting for stable display configuration")
+        return false
     }
 
     private nonisolated static let displayReconfigurationCallback: CGDisplayReconfigurationCallBack = { _, _, _ in

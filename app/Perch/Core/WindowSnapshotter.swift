@@ -32,12 +32,6 @@ actor WindowSnapshotter {
         let frame: CGRect?
     }
 
-    private enum AXAttributeReadResult {
-        case values([Any])
-        case cannotComplete
-        case failed
-    }
-
     private enum AXSingleAttributeReadResult {
         case value(CFTypeRef)
         case cannotComplete
@@ -90,7 +84,7 @@ actor WindowSnapshotter {
         axMetadataByProcess: inout [pid_t: [AXWindowMetadata]],
         usedAXMetadataIndicesByProcess: inout [pid_t: Set<Int>]
     ) throws -> WindowSnapshot? {
-        guard let layer = intValue(windowInfo[kCGWindowLayer as String]), layer == 0 else {
+        guard let layer = CGWindowCatalog.intValue(windowInfo[kCGWindowLayer as String]), layer == 0 else {
             return nil
         }
 
@@ -100,8 +94,8 @@ actor WindowSnapshotter {
         }
 
         guard
-            let processIdentifier = intValue(windowInfo[kCGWindowOwnerPID as String]),
-            let frame = cgRect(from: windowInfo[kCGWindowBounds as String]),
+            let processIdentifier = CGWindowCatalog.intValue(windowInfo[kCGWindowOwnerPID as String]),
+            let frame = CGWindowCatalog.cgRect(from: windowInfo[kCGWindowBounds as String]),
             frame.width > 0,
             frame.height > 0
         else {
@@ -120,7 +114,7 @@ actor WindowSnapshotter {
             return nil
         }
 
-        let cgWindowID = uint32Value(windowInfo[kCGWindowNumber as String])
+        let cgWindowID = CGWindowCatalog.uint32Value(windowInfo[kCGWindowNumber as String])
         let cgTitle = windowInfo[kCGWindowName as String] as? String ?? ""
         let pid = pid_t(processIdentifier)
         let processMetadata: [AXWindowMetadata]
@@ -216,7 +210,7 @@ actor WindowSnapshotter {
 
         for window in rawWindows {
             let values: [Any]
-            switch copyAttributes(attributes, from: window) {
+            switch AccessibilityValues.copyAttributes(attributes, from: window) {
             case let .values(readValues):
                 values = readValues
             case .cannotComplete:
@@ -230,17 +224,17 @@ actor WindowSnapshotter {
                 continue
             }
 
-            guard let role = value(at: 0, in: values, as: String.self) else {
+            guard let role = AccessibilityValues.value(at: 0, in: values, as: String.self) else {
                 continue
             }
 
             metadata.append(AXWindowMetadata(
-                title: value(at: 1, in: values, as: String.self) ?? "",
+                title: AccessibilityValues.value(at: 1, in: values, as: String.self) ?? "",
                 role: role,
-                isMinimized: value(at: 2, in: values, as: Bool.self) ?? false,
-                isFullscreen: value(at: 3, in: values, as: Bool.self) ?? false,
-                accessibilityIdentifier: value(at: 4, in: values, as: String.self),
-                frame: frame(
+                isMinimized: AccessibilityValues.value(at: 2, in: values, as: Bool.self) ?? false,
+                isFullscreen: AccessibilityValues.value(at: 3, in: values, as: Bool.self) ?? false,
+                accessibilityIdentifier: AccessibilityValues.value(at: 4, in: values, as: String.self),
+                frame: AccessibilityValues.frame(
                     positionValue: values.indices.contains(5) ? values[5] : nil,
                     sizeValue: values.indices.contains(6) ? values[6] : nil
                 )
@@ -350,145 +344,12 @@ actor WindowSnapshotter {
         return .value(value)
     }
 
-    private func cgRect(from value: Any?) -> CGRect? {
-        guard let dictionary = value as? [String: Any] else {
-            return nil
-        }
-
-        return CGRect(dictionaryRepresentation: dictionary as CFDictionary)
-    }
-
-    private func intValue(_ value: Any?) -> Int? {
-        switch value {
-        case let number as NSNumber:
-            number.intValue
-        case let integer as Int:
-            integer
-        default:
-            nil
-        }
-    }
-
-    private func uint32Value(_ value: Any?) -> UInt32? {
-        switch value {
-        case let number as NSNumber:
-            number.uint32Value
-        case let integer as UInt32:
-            integer
-        case let integer as Int where integer >= 0:
-            UInt32(integer)
-        default:
-            nil
-        }
-    }
-
     private func normalizedAccessibilityIdentifier(_ identifier: String?) -> String? {
         guard let normalized = identifier?.trimmingCharacters(in: .whitespacesAndNewlines), !normalized.isEmpty else {
             return nil
         }
 
         return normalized
-    }
-
-    private func copyAttributes(
-        _ attributes: [String],
-        from element: AXUIElement
-    ) -> AXAttributeReadResult {
-        var rawValues: CFArray?
-        let error = AXUIElementCopyMultipleAttributeValues(
-            element,
-            attributes as CFArray,
-            [],
-            &rawValues
-        )
-
-        if Self.isIncompleteAccessibilityError(error) {
-            return .cannotComplete
-        }
-
-        guard error == .success, let values = rawValues as? [Any] else {
-            return .failed
-        }
-
-        if values.contains(where: {
-            embeddedAXError(in: $0).map(Self.isIncompleteAccessibilityError) == true
-        }) {
-            return .cannotComplete
-        }
-
-        return .values(values)
-    }
-
-    private func embeddedAXError(in value: Any) -> AXError? {
-        let cfValue = value as CFTypeRef
-        guard CFGetTypeID(cfValue) == AXValueGetTypeID() else {
-            return nil
-        }
-
-        let axValue = unsafeDowncast(cfValue, to: AXValue.self)
-        guard AXValueGetType(axValue) == .axError else {
-            return nil
-        }
-
-        var error = AXError.success
-        return AXValueGetValue(axValue, .axError, &error) ? error : nil
-    }
-
-    private func value<T>(at index: Int, in values: [Any], as type: T.Type) -> T? {
-        guard values.indices.contains(index) else {
-            return nil
-        }
-
-        return values[index] as? T
-    }
-
-    private func frame(positionValue: Any?, sizeValue: Any?) -> CGRect? {
-        guard
-            let position = point(from: positionValue),
-            let windowSize = size(from: sizeValue)
-        else {
-            return nil
-        }
-
-        return CGRect(origin: position, size: windowSize)
-    }
-
-    private func point(from value: Any?) -> CGPoint? {
-        guard let value else {
-            return nil
-        }
-
-        let cfValue = value as CFTypeRef
-        guard CFGetTypeID(cfValue) == AXValueGetTypeID() else {
-            return nil
-        }
-
-        let axValue = unsafeDowncast(cfValue, to: AXValue.self)
-        guard AXValueGetType(axValue) == .cgPoint else {
-            return nil
-        }
-
-        var point = CGPoint.zero
-        return AXValueGetValue(axValue, .cgPoint, &point) ? point : nil
-    }
-
-    private func size(from value: Any?) -> CGSize? {
-        guard let value else {
-            return nil
-        }
-
-        let cfValue = value as CFTypeRef
-        guard CFGetTypeID(cfValue) == AXValueGetTypeID() else {
-            return nil
-        }
-
-        let axValue = unsafeDowncast(cfValue, to: AXValue.self)
-        guard AXValueGetType(axValue) == .cgSize else {
-            return nil
-        }
-
-        var size = CGSize.zero
-        return AXValueGetValue(axValue, .cgSize, &size) ? size : nil
     }
 
 }

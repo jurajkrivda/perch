@@ -13,6 +13,8 @@ jobs:
         working-directory: app
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Check repository hygiene
+        run: python3 script/check_repository.py
       - name: Build app target
         run: |
           xcodebuild build \
@@ -29,3 +31,12 @@ jobs:
             -scheme PerchModelTests \
             -destination 'platform=macOS' \
             -derivedDataPath build/DerivedData
+      - name: Build release target
+        run: |
+          xcodebuild build \
+            -project Perch.xcodeproj \
+            -scheme Perch \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO

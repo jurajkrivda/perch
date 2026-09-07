@@ -5,8 +5,8 @@ set -euo pipefail
 # generate_keys, sign_update) exist locally and prints the tools directory.
 # The version must match the SwiftPM pin in project.yml.
 
-SPARKLE_VERSION="2.9.5"
-SPARKLE_SHA256="015336b601493e05c237964954bff6191370003d94edefe663724c88840d73cc"
+SPARKLE_VERSION="2.9.6"
+SPARKLE_SHA256="52bf9e88cdd972fc0c81501377a880e90d47031bd8ca5462488f843e2609e192"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TOOLS_DIR="$ROOT_DIR/build/tools/sparkle-$SPARKLE_VERSION"

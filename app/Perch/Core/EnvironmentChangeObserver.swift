@@ -5,19 +5,26 @@ import Foundation
 /// Keeping their teardown in a non-actor helper lets Swift 6 safely run cleanup
 /// when the main-actor observer is deallocated.
 private final class EnvironmentObserverTokenStore {
+    let workspaceCenter: NotificationCenter
+    let applicationCenter: NotificationCenter
+    let distributedCenter: NotificationCenter
     var workspace: [NSObjectProtocol] = []
     var application: [NSObjectProtocol] = []
     var distributed: [NSObjectProtocol] = []
 
+    init(workspace: NotificationCenter, application: NotificationCenter, distributed: NotificationCenter) {
+        workspaceCenter = workspace
+        applicationCenter = application
+        distributedCenter = distributed
+    }
+
     func removeAll() {
-        let workspaceCenter = NSWorkspace.shared.notificationCenter
         workspace.forEach(workspaceCenter.removeObserver)
         workspace.removeAll()
 
-        application.forEach(NotificationCenter.default.removeObserver)
+        application.forEach(applicationCenter.removeObserver)
         application.removeAll()
 
-        let distributedCenter = DistributedNotificationCenter.default()
         distributed.forEach(distributedCenter.removeObserver)
         distributed.removeAll()
     }
@@ -27,7 +34,7 @@ private final class EnvironmentObserverTokenStore {
     }
 }
 
-private enum SystemSessionVisibility {
+enum SystemSessionVisibility {
     /// Core Graphics exposes no typed constant for this session-dictionary key.
     /// It is present with a true value while the secure screen is locked and
     /// absent on an unlocked session, so absence deliberately means false.
@@ -39,8 +46,8 @@ private enum SystemSessionVisibility {
         }
 
         let session = sessionDictionary as NSDictionary
-        let isOnConsole = session[kCGSessionOnConsoleKey] as? Bool ?? true
-        let loginIsComplete = session[kCGSessionLoginDoneKey] as? Bool ?? true
+        let isOnConsole = session[kCGSessionOnConsoleKey] as? Bool ?? false
+        let loginIsComplete = session[kCGSessionLoginDoneKey] as? Bool ?? false
         let screenIsLocked = session[screenLockedKey] as? Bool ?? false
         return isOnConsole && loginIsComplete && !screenIsLocked
     }
@@ -50,7 +57,7 @@ private enum SystemSessionVisibility {
 /// the display environment and macOS window relocation have settled.
 @MainActor
 final class EnvironmentChangeObserver {
-    typealias SettleTimeoutProvider = @MainActor () -> TimeInterval
+    typealias SettleTimeoutProvider = @MainActor () async -> TimeInterval
     typealias TriggeredHandler = @MainActor (EnvironmentChangeReason) -> Void
     typealias SessionVisibilityHandler = @MainActor (Bool) -> Void
     typealias SettledHandler = @MainActor (EnvironmentChangeReason) -> Void
@@ -58,31 +65,53 @@ final class EnvironmentChangeObserver {
     private static let quietPeriod: TimeInterval = 2
     private static let relocationGracePeriod: TimeInterval = 1.5
     private static let defaultSettleTimeout: TimeInterval = 10
-    private static let visibilityConfirmationAttempts = 10
-    private static let visibilityConfirmationDelayNanoseconds: UInt64 = 200_000_000
+    private static let visibilityConfirmationAttempts = 60
 
     private let settleTimeoutProvider: SettleTimeoutProvider
     private let onTriggered: TriggeredHandler
     private let onSessionVisibilityChanged: SessionVisibilityHandler
     private let onSettled: SettledHandler
 
-    private let observerTokens = EnvironmentObserverTokenStore()
+    private let observerTokens: EnvironmentObserverTokenStore
+    private let sessionVisibility: @MainActor () -> Bool?
+    private let waitForStable: @Sendable (TimeInterval) async -> Bool
+    private let sleep: @Sendable (TimeInterval) async throws -> Void
     private var settleTask: Task<Void, Never>?
     private var visibilityConfirmationTask: Task<Void, Never>?
     private var reasonAccumulator = EnvironmentChangeReasonAccumulator()
-    private var isSessionVisible = true
+    private var isSessionVisible = false
+    private var isAsleep = false
+    private var hasEvaluatedWakeCycle = true
     private var isStarted = false
 
     init(
         settleTimeout: @escaping SettleTimeoutProvider = { defaultSettleTimeout },
         onTriggered: @escaping TriggeredHandler = { _ in },
         onSessionVisibilityChanged: @escaping SessionVisibilityHandler = { _ in },
-        onSettled: @escaping SettledHandler
+        onSettled: @escaping SettledHandler,
+        workspaceCenter: NotificationCenter = NSWorkspace.shared.notificationCenter,
+        applicationCenter: NotificationCenter = .default,
+        distributedCenter: NotificationCenter = DistributedNotificationCenter.default(),
+        sessionVisibility: @escaping @MainActor () -> Bool? = { SystemSessionVisibility.current() },
+        waitForStable: @escaping @Sendable (TimeInterval) async -> Bool = { timeout in
+            return await DisplayStabilizer.shared.waitAfterChange(
+                quietPeriod: quietPeriod, timeout: max(quietPeriod, timeout)
+            )
+        },
+        sleep: @escaping @Sendable (TimeInterval) async throws -> Void = {
+            try await Task.sleep(for: .seconds($0))
+        }
     ) {
         settleTimeoutProvider = settleTimeout
         self.onTriggered = onTriggered
         self.onSessionVisibilityChanged = onSessionVisibilityChanged
         self.onSettled = onSettled
+        self.sessionVisibility = sessionVisibility
+        self.waitForStable = waitForStable
+        self.sleep = sleep
+        observerTokens = EnvironmentObserverTokenStore(
+            workspace: workspaceCenter, application: applicationCenter, distributed: distributedCenter
+        )
     }
 
     deinit {
@@ -97,11 +126,8 @@ final class EnvironmentChangeObserver {
 
         isStarted = true
 
-        Task {
-            await DisplayStabilizer.shared.start()
-        }
-
-        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        onSessionVisibilityChanged(false)
+        let workspaceCenter = observerTokens.workspaceCenter
         observerTokens.workspace = [
             workspaceCenter.addObserver(
                 forName: NSWorkspace.didWakeNotification,
@@ -109,7 +135,7 @@ final class EnvironmentChangeObserver {
                 queue: .main
             ) { [weak self] _ in
                 Task { @MainActor [weak self] in
-                    self?.environmentDidChange(reason: .systemWake)
+                    self?.wake(reason: .systemWake)
                 }
             },
             workspaceCenter.addObserver(
@@ -118,7 +144,7 @@ final class EnvironmentChangeObserver {
                 queue: .main
             ) { [weak self] _ in
                 Task { @MainActor [weak self] in
-                    self?.environmentDidChange(reason: .screensWake)
+                    self?.wake(reason: .screensWake)
                 }
             },
             workspaceCenter.addObserver(
@@ -141,7 +167,17 @@ final class EnvironmentChangeObserver {
             }
         ]
 
-        let applicationCenter = NotificationCenter.default
+        for name in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification] {
+            observerTokens.workspace.append(workspaceCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.isAsleep = true
+                    self?.hasEvaluatedWakeCycle = false
+                    self?.sessionVisibilityDidChange(isVisible: false)
+                }
+            })
+        }
+
+        let applicationCenter = observerTokens.applicationCenter
         observerTokens.application = [
             applicationCenter.addObserver(
                 forName: NSApplication.didChangeScreenParametersNotification,
@@ -166,7 +202,7 @@ final class EnvironmentChangeObserver {
         // Distributed screen lock/unlock notifications require an unsandboxed app.
         // Perch currently has empty entitlements; adding App Sandbox later will
         // silently stop this notification from being delivered.
-        let distributedCenter = DistributedNotificationCenter.default()
+        let distributedCenter = observerTokens.distributedCenter
         observerTokens.distributed = [
             distributedCenter.addObserver(
                 forName: Notification.Name("com.apple.screenIsUnlocked"),
@@ -188,7 +224,10 @@ final class EnvironmentChangeObserver {
             }
         ]
 
-        refreshSessionVisibilityFromSystem()
+        // Retain startup intent if login/WindowServer is not ready yet. A login
+        // item cannot rely on notifications sent before its observers existed.
+        _ = reasonAccumulator.receive(.applicationLaunch, isSessionVisible: false, beginsNewBurst: false)
+        confirmVisibleSession(reason: .applicationLaunch)
 
         AppLog.display.info("Started environment change observer")
     }
@@ -204,6 +243,9 @@ final class EnvironmentChangeObserver {
         visibilityConfirmationTask?.cancel()
         visibilityConfirmationTask = nil
         reasonAccumulator.reset()
+        isAsleep = false
+        hasEvaluatedWakeCycle = true
+        isSessionVisible = false
 
         observerTokens.removeAll()
 
@@ -218,7 +260,7 @@ final class EnvironmentChangeObserver {
         // Lock notifications can be delivered before this observer starts or
         // race a wake callback. Re-read the current session before processing
         // wake/display work so an offer cannot expire behind the secure UI.
-        if reason.isWake || reason == .displayReconfiguration {
+        if reason.requiresRestoreEvaluation || reason == .displayReconfiguration {
             refreshSessionVisibilityFromSystem()
         }
 
@@ -249,36 +291,40 @@ final class EnvironmentChangeObserver {
 
         settleTask?.cancel()
         settleTask = Task { @MainActor [weak self] in
-            guard let settleTimeout = self?.settleTimeoutProvider() else {
+            guard let self else {
                 return
             }
+            let settleTimeout = await self.settleTimeoutProvider()
+            guard !Task.isCancelled else { return }
 
             // A wake or unlock is itself the start of a new settling window,
             // even if Core Graphics has not reported display changes yet.
-            await DisplayStabilizer.shared.markChanged()
-            await DisplayStabilizer.shared.waitForStable(
-                quietPeriod: Self.quietPeriod,
-                timeout: settleTimeout
-            )
+            guard await self.waitForStable(settleTimeout) else {
+                guard !Task.isCancelled else { return }
+                self.settleTask = nil
+                AppLog.display.warning("Automatic restore deferred: displays did not stabilize")
+                return
+            }
 
             guard !Task.isCancelled else {
                 return
             }
 
             do {
-                try await Task.sleep(for: .seconds(Self.relocationGracePeriod))
+                try await self.sleep(Self.relocationGracePeriod)
             } catch {
                 return
             }
 
             guard !Task.isCancelled,
-                  let self,
                   self.isStarted,
                   self.isSessionVisible
             else {
                 return
             }
 
+            self.refreshSessionVisibilityFromSystem()
+            guard self.isSessionVisible else { return }
             let settledReason = self.reasonAccumulator.finish(fallback: reason)
             self.settleTask = nil
             self.onSettled(settledReason)
@@ -305,8 +351,17 @@ final class EnvironmentChangeObserver {
     }
 
     private func refreshSessionVisibilityFromSystem() {
-        guard let isVisible = SystemSessionVisibility.current() else { return }
-        sessionVisibilityDidChange(isVisible: isVisible)
+        sessionVisibilityDidChange(isVisible: !isAsleep && sessionVisibility() == true)
+    }
+
+    private func wake(reason: EnvironmentChangeReason) {
+        isAsleep = false
+        // System wake and screen wake can be far apart on docks. They belong
+        // to one sleep cycle, so a late second signal only rechecks topology.
+        let effectiveReason = hasEvaluatedWakeCycle ? .displayReconfiguration : reason
+        hasEvaluatedWakeCycle = true
+        environmentDidChange(reason: effectiveReason)
+        if !isSessionVisible { confirmVisibleSession(reason: reason) }
     }
 
     private func confirmVisibleSession(reason: EnvironmentChangeReason) {
@@ -317,7 +372,7 @@ final class EnvironmentChangeObserver {
             for attempt in 0..<Self.visibilityConfirmationAttempts {
                 guard self.isStarted, !Task.isCancelled else { return }
 
-                if SystemSessionVisibility.current() == true {
+                if !self.isAsleep, self.sessionVisibility() == true {
                     self.visibilityConfirmationTask = nil
                     self.sessionVisibilityDidChange(isVisible: true)
                     self.environmentDidChange(reason: reason)
@@ -338,9 +393,7 @@ final class EnvironmentChangeObserver {
                     break
                 }
                 do {
-                    try await Task.sleep(
-                        nanoseconds: Self.visibilityConfirmationDelayNanoseconds
-                    )
+                    try await self.sleep(0.5)
                 } catch {
                     return
                 }

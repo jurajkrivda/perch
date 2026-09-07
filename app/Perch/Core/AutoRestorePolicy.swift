@@ -3,6 +3,7 @@ import Foundation
 /// The signal that caused an automatic-restore decision. These values are
 /// independent of AppKit so wake semantics remain part of the pure policy.
 enum EnvironmentChangeReason: String, Sendable {
+    case applicationLaunch
     case systemWake
     case screensWake
     case displayReconfiguration
@@ -13,19 +14,23 @@ enum EnvironmentChangeReason: String, Sendable {
         switch self {
         case .systemWake, .screensWake:
             true
-        case .displayReconfiguration, .screenUnlock, .sessionActive:
+        case .applicationLaunch, .displayReconfiguration, .screenUnlock, .sessionActive:
             false
         }
     }
+
+    /// Login items can start after every wake/session notification was posted.
+    /// Startup therefore needs its own restore opportunity, even on unchanged displays.
+    var requiresRestoreEvaluation: Bool { isWake || self == .applicationLaunch }
 
     /// Keep wake intent when macOS follows a wake notification with display,
     /// unlock, or session callbacks in the same coalesced burst. For bursts
     /// without a wake, preserve the existing last-signal diagnostic behavior.
     func coalesced(with newerReason: Self) -> Self {
-        if isWake {
+        if requiresRestoreEvaluation {
             return self
         }
-        if newerReason.isWake {
+        if newerReason.requiresRestoreEvaluation {
             return newerReason
         }
         return newerReason
@@ -58,8 +63,8 @@ struct EnvironmentChangeReasonAccumulator: Sendable {
         }
 
         if beginsNewBurst {
-            activeReason = effectiveReason
-            return effectiveReason
+            activeReason = (activeReason ?? effectiveReason).coalesced(with: effectiveReason)
+            return activeReason
         }
 
         activeReason = (activeReason ?? effectiveReason).coalesced(with: effectiveReason)
@@ -85,7 +90,7 @@ struct EnvironmentChangeReasonAccumulator: Sendable {
     }
 
     private mutating func deferWakeIfNeeded(_ reason: EnvironmentChangeReason) {
-        guard reason.isWake else { return }
+        guard reason.requiresRestoreEvaluation else { return }
         deferredWakeReason = (deferredWakeReason ?? reason).coalesced(with: reason)
     }
 }
@@ -116,7 +121,7 @@ enum AutoRestorePolicy {
         // UUIDs did not change: macOS may still have scattered windows while
         // sleeping. Other callbacks remain topology-gated to avoid false
         // prompts from unlock/session activity and no-op display events.
-        guard input.trigger.isWake ||
+        guard input.trigger.requiresRestoreEvaluation ||
                 input.topologyAtLastDecision?.matchesIdentity(of: input.currentTopology) != true
         else {
             return .doNothing(reason: "topology unchanged")
@@ -124,7 +129,7 @@ enum AutoRestorePolicy {
 
         // "Already offered" suppresses duplicate callbacks for one display
         // transition, but must not suppress a later, distinct wake cycle.
-        guard input.trigger.isWake || !input.alreadyPromptedForCurrentTopology else {
+        guard input.trigger.requiresRestoreEvaluation || !input.alreadyPromptedForCurrentTopology else {
             return .doNothing(reason: "already offered")
         }
 

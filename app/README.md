@@ -14,7 +14,7 @@ The app runs as a menu-bar utility. It saves visible windows into named layouts,
 - visible-window capture and display UUID mapping
 - layout persistence in Application Support
 - user-managed layouts with restore shortcuts
-- optional prompt-based or automatic restore after wake and display changes
+- optional prompt-based or automatic restore at startup, after wake and display changes
 - launch-at-login and menu bar label preferences
 - AX-based restore with title matching and retry verification
 - runtime UI language switching (Czech, Slovak, English, Spanish, German)
@@ -45,6 +45,10 @@ Build and launch the app:
 ./script/build_and_run.sh
 ```
 
+Use `./script/build_and_run.sh --build-only` to prepare a debug app without
+launching it. The script no longer terminates an existing Perch process; quit
+that process when you are ready to run the debug build.
+
 Build a signed release app and zip:
 
 ```bash
@@ -72,6 +76,10 @@ xcodebuild test -project Perch.xcodeproj -scheme PerchModelTests -destination 'p
 ```
 
 ## Project Shape
+
+See [architecture](docs/architecture.md) for responsibilities and concurrency,
+and [automatic restore](docs/auto-restore-brief.md) for the behavior contract.
+Run `python3 script/check_repository.py` before submitting changes.
 
 ```text
 Perch/

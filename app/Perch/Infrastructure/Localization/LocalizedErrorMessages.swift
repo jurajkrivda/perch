@@ -8,6 +8,8 @@ import Foundation
 enum LocalizedErrorMessages {
     static func message(for error: Error) -> String {
         switch error {
+        case SlotEngineError.displayConfigurationChanged:
+            L10n.text(.displaysChangedDuringSave)
         case SlotEngineError.invalidLayoutName:
             L10n.text(.layoutNameCannotBeEmpty)
         case SlotEngineError.operationInProgress:

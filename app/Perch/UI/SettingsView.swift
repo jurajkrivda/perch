@@ -16,12 +16,19 @@ struct SettingsView: View {
             AboutSettingsTab(model: model)
                 .tabItem { Label(localization.text(.aboutTabTitle), systemImage: "info.circle") }
         }
-        .frame(width: 560, height: 520)
+        .safeAreaInset(edge: .top) {
+            if model.recoveryNotice != nil {
+                StoreRecoveryBanner(model: model)
+            }
+        }
+        .frame(minWidth: 560, minHeight: 520)
         .task {
             await model.bootstrap()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.refreshAccessibilityStatus()
+            model.refreshLaunchAtLoginStatus()
+            model.refreshAutomaticUpdateChecks()
         }
         .onReceive(NotificationCenter.default.publisher(for: .perchDocumentDidChange)) { _ in
             model.scheduleDocumentRefresh()

@@ -37,8 +37,7 @@ repository; README is the product landing page.
 - Choose the matching tag `v<version>`, for example `v0.2.0`.
 - Prepare concise user-facing Markdown release notes in
   `docs/release-notes-<version>.md`.
-- Add the matching HTML notes if the local release tooling still consumes
-  them.
+- Keep Markdown as the single release-notes source for local tooling and CI.
 - Review known limitations and update README or SUPPORT if behavior changed.
 
 ## 2. Run local verification
@@ -80,7 +79,7 @@ Expected outputs:
 - `dist/release/Perch.zip`
 - `dist/release/Perch.dmg`
 
-The app must contain `Contents/Resources/Sparkle-2.9.5-LICENSE.txt`. The DMG
+The app must contain `Contents/Resources/Sparkle-2.9.6-LICENSE.txt`. The DMG
 must contain `Perch.app`, the Applications shortcut, `LICENSE`, and `NOTICE`.
 
 The GitHub Release asset must keep the exact basename `Perch.dmg`. Do not add

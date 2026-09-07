@@ -25,6 +25,12 @@ Keep pure policy and matching logic covered by unit tests. Changes involving
 window movement, wake, displays, Accessibility permission, or global shortcuts
 should also include the hardware and macOS versions used for manual testing.
 
+Keep Swift source and test files under 500 lines by separating responsibilities.
+Generated Xcode project files are exempt. Run `python3 script/check_repository.py`
+from `app/` before submitting changes. Regenerate `Perch.xcodeproj` with XcodeGen
+when adding or removing sources. Test sources are included by directory so new
+reusable application code is compiled by the test target too.
+
 ## Pull requests
 
 - Keep each pull request focused and explain the user-visible effect.

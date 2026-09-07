@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Uses the current dist/release DMG to generate an EdDSA-signed appcast for
+# Uses the current dist/release DMG to generate an appcast with a signed update for
 # GitHub Pages. The enclosure itself stays on the tagged GitHub Release.
 
 APP_NAME="Perch"
@@ -29,15 +29,14 @@ rm -rf "$SITE_DIR"
 mkdir -p "$UPDATES_DIR"
 cp "$DMG_PATH" "$UPDATES_DIR/$APP_NAME-$APP_VERSION.dmg"
 
-# generate_appcast embeds release notes from an HTML file named after the
-# archive when one sits next to it.
-NOTES_HTML="$ROOT_DIR/docs/release-notes-$APP_VERSION.html"
+# Sparkle 2.9 supports Markdown notes. Keep one source for local verification
+# and the published GitHub Release instead of maintaining duplicate HTML.
 NOTES_MD="$ROOT_DIR/docs/release-notes-$APP_VERSION.md"
-if [[ -f "$NOTES_HTML" ]]; then
-  cp "$NOTES_HTML" "$UPDATES_DIR/$APP_NAME-$APP_VERSION.html"
-elif [[ -f "$NOTES_MD" ]]; then
-  echo "warning: only Markdown release notes found ($NOTES_MD)." >&2
-  echo "warning: Sparkle's update dialog embeds docs/release-notes-$APP_VERSION.html — author it, or the dialog shows no notes." >&2
+if [[ -f "$NOTES_MD" ]]; then
+  cp "$NOTES_MD" "$UPDATES_DIR/$APP_NAME-$APP_VERSION.md"
+else
+  echo "error: release notes missing at $NOTES_MD" >&2
+  exit 1
 fi
 
 if ! "$TOOLS_DIR/bin/generate_appcast" \

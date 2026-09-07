@@ -1,12 +1,12 @@
 Perch
 Copyright 2026 Juraj Krivda
 
-Perch includes Sparkle 2.9.5:
-https://github.com/sparkle-project/Sparkle/tree/2.9.5
+Perch includes Sparkle 2.9.6:
+https://github.com/sparkle-project/Sparkle/tree/2.9.6
 
 The following license text and bundled third-party notices are reproduced from
 Sparkle's upstream LICENSE file. The same text ships inside Perch as
-`Contents/Resources/Sparkle-2.9.5-LICENSE.txt`.
+`Contents/Resources/Sparkle-2.9.6-LICENSE.txt`.
 
 Copyright (c) 2006-2013 Andy Matuschak.
 Copyright (c) 2009-2013 Elgato Systems GmbH.

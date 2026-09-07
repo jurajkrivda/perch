@@ -215,7 +215,7 @@ struct AutoRestoreDecisionContextState: Sendable {
     }
 
     mutating func sessionBecameHidden() {
-        if let reason = context?.reason, reason.isWake {
+        if let reason = context?.reason, reason.requiresRestoreEvaluation {
             deferredWakeReason = reason
         }
         context = nil

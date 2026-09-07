@@ -24,8 +24,15 @@ enum LocalizationKey: String, CaseIterable, Sendable {
     case appLabel
     case applicationClosed
     case applicationNotInstalled
+    case applicationLaunchTimedOut
+    case storeRecoveryTitle
+    case storeRecoveryMessage
+    case storeRecoveryShowFiles
+    case storeRecoveryDismiss
+    case displaysChangedDuringSave
     case autoRestoreAdvanced
     case autoRestoreAutomatic
+    case autoRestoreAutomaticFooter
     case autoRestoreDecisionAlreadyOffered
     case autoRestoreDecisionDisabled
     case autoRestoreDecisionEmptyLayout

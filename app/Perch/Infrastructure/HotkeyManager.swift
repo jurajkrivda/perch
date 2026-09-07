@@ -132,7 +132,7 @@ final class HotkeyManager {
         )
 
         guard status == noErr, let reference else {
-            AppLog.hotkeys.error("Failed to register global hotkey \(hotkey.description, privacy: .public): \(status)")
+            AppLog.hotkeys.error("Failed to register global hotkey \(hotkey.description, privacy: .private): \(status)")
             return HotkeyRegistrationFailure(
                 binding: hotkey.binding,
                 description: hotkey.description,

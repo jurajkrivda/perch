@@ -14,7 +14,7 @@ settings:
 packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
-    exactVersion: "2.9.5"
+    exactVersion: "2.9.6"
 
 targets:
   Perch:
@@ -58,23 +58,12 @@ targets:
     deploymentTarget: "14.0"
     sources:
       - path: PerchTests
-      - path: Perch/Infrastructure/Localization
+      - path: Perch/Core
       - path: Perch/Models
-      - path: Perch/Core/AccessibilityManager.swift
-      - path: Perch/Core/AutoRestoreAttemptState.swift
-      - path: Perch/Core/AutoRestorePolicy.swift
-      - path: Perch/Core/DisplayManager.swift
-      - path: Perch/Core/DisplayStabilizer.swift
-      - path: Perch/Core/OverlayWindowPlacement.swift
-      - path: Perch/Core/SlotEngine.swift
-      - path: Perch/Core/CGRectExtensions.swift
-      - path: Perch/Core/WindowMover.swift
-      - path: Perch/Core/WindowSnapshotter.swift
-      - path: Perch/Infrastructure/HotkeyRegistrationState.swift
-      - path: Perch/Infrastructure/LegacyLicensingDataCleaner.swift
-      - path: Perch/Infrastructure/LaunchAtLogin.swift
-      - path: Perch/Infrastructure/Logger.swift
-      - path: Perch/UI/Settings/SettingsTaskState.swift
+      - path: Perch/Infrastructure
+      - path: Perch/UI
+    dependencies:
+      - package: Sparkle
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.jurajkrivda.perch.tests

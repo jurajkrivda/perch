@@ -24,7 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard SingleInstanceLock.acquire() else {
-            AppLog.app.warning("Another Perch instance is already running; terminating duplicate launch")
+            AppLog.app.warning("Unable to acquire the single-instance lock; terminating this launch")
             NSApp.terminate(nil)
             return
         }
@@ -55,7 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.autoRestoreCoordinator = autoRestoreCoordinator
             autoRestoreCoordinator.start()
         } catch {
-            AppLog.app.error("Failed to initialize slot engine: \(error.localizedDescription, privacy: .public)")
+            AppLog.app.error("Failed to initialize slot engine: \(error.localizedDescription, privacy: .private)")
             menuBarController = MenuBarController(slotEngine: nil)
         }
     }
@@ -149,7 +149,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
                 self.hotkeyManager = hotkeyManager
             } catch {
-                AppLog.hotkeys.error("Failed to register hotkeys: \(error.localizedDescription, privacy: .public)")
+                AppLog.hotkeys.error("Failed to register hotkeys: \(error.localizedDescription, privacy: .private)")
             }
         }
     }

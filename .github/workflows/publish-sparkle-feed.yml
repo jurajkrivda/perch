@@ -196,7 +196,7 @@ jobs:
           tools_dir="$(./app/script/sparkle_tools.sh)"
           echo "directory=$tools_dir" >> "$GITHUB_OUTPUT"
 
-      - name: Generate signed appcast
+      - name: Generate appcast with signed updates
         shell: bash
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}

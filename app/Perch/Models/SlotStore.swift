@@ -52,6 +52,14 @@ actor SlotStore {
         fileURL
     }
 
+    func recoveryNotice() throws -> StoreRecoveryNotice? {
+        try StoreRecoveryFiles(storeURL: fileURL, fileManager: fileManager).pendingNotice()
+    }
+
+    func acknowledgeRecoveryNotice(_ notice: StoreRecoveryNotice) throws {
+        try StoreRecoveryFiles(storeURL: fileURL, fileManager: fileManager).acknowledge(notice)
+    }
+
     func load() throws -> SlotStoreDocument {
         try hardenExistingStorePermissions()
 
@@ -94,13 +102,13 @@ actor SlotStore {
             try fileManager.moveItem(at: fileURL, to: quarantineURL)
         } catch {
             AppLog.persistence.error(
-                "Store file is corrupt and could not be quarantined: \(error.localizedDescription, privacy: .public)"
+                "Store file is corrupt and could not be quarantined: \(error.localizedDescription, privacy: .private)"
             )
             throw decodeError
         }
 
         AppLog.persistence.error(
-            "Store file was corrupt; moved to \(quarantineURL.lastPathComponent, privacy: .public) and reset to defaults: \(decodeError.localizedDescription, privacy: .public)"
+            "Store file was corrupt; moved to \(quarantineURL.lastPathComponent, privacy: .public) and reset to defaults: \(decodeError.localizedDescription, privacy: .private)"
         )
     }
 

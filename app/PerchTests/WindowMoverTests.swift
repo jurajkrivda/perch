@@ -5,21 +5,21 @@ import XCTest
 final class WindowMoverTests: XCTestCase {
     func testNormalizedTitleTrimsWhitespaceCaseAndDiacritics() {
         XCTAssertEqual(
-            WindowMover.normalizedTitle("  Prilis ZLUTOUCKY  kun  "),
+            WindowTitleSimilarity.normalize("  Prilis ZLUTOUCKY  kun  "),
             "prilis zlutoucky kun"
         )
     }
 
     func testFuzzyTitleScorePrefersExactAndContainedTitles() {
-        let exactScore = WindowMover.fuzzyTitleScore(
+        let exactScore = WindowTitleSimilarity.score(
             candidate: "Project Plan - Pages",
             target: "Project Plan - Pages"
         )
-        let containedScore = WindowMover.fuzzyTitleScore(
+        let containedScore = WindowTitleSimilarity.score(
             candidate: "Project Plan - Pages",
             target: "Project Plan"
         )
-        let unrelatedScore = WindowMover.fuzzyTitleScore(
+        let unrelatedScore = WindowTitleSimilarity.score(
             candidate: "Inbox - Mail",
             target: "Project Plan"
         )
@@ -30,7 +30,7 @@ final class WindowMoverTests: XCTestCase {
     }
 
     func testBestWindowSelectionFallsBackToOnlyWindowWhenBrowserTitleChanged() {
-        let selection = WindowMover.bestWindowSelection(
+        let selection = WindowMatcher.bestWindowSelection(
             in: [
                 candidate(
                     title: "New Tab – Brave",
@@ -41,12 +41,12 @@ final class WindowMoverTests: XCTestCase {
             strictness: .fuzzy
         )
 
-        XCTAssertEqual(selection, WindowMover.WindowSelection(index: 0, reason: .singleCandidateFallback))
+        XCTAssertEqual(selection, WindowMatcher.WindowSelection(index: 0, reason: .singleCandidateFallback))
     }
 
     func testBestWindowSelectionDoesNotGuessWhenSeveralBrowserWindowsChangedTitle() {
         let target = "⁨From⁩ • HBO Max – Brave"
-        let selection = WindowMover.bestWindowSelection(
+        let selection = WindowMatcher.bestWindowSelection(
             in: [
                 candidate(title: "New Tab – Brave"),
                 candidate(title: "Downloads – Brave")
@@ -60,7 +60,7 @@ final class WindowMoverTests: XCTestCase {
 
     func testBestWindowSelectionPrefersTitleMatchWhenSeveralWindowsExist() {
         let target = "Budget"
-        let selection = WindowMover.bestWindowSelection(
+        let selection = WindowMatcher.bestWindowSelection(
             in: [
                 candidate(title: "Inbox – Mail"),
                 candidate(title: "Budget 2026 – Numbers")
@@ -69,28 +69,28 @@ final class WindowMoverTests: XCTestCase {
             strictness: .fuzzy
         )
 
-        XCTAssertEqual(selection, WindowMover.WindowSelection(index: 1, reason: .titleMatch))
+        XCTAssertEqual(selection, WindowMatcher.WindowSelection(index: 1, reason: .titleMatch))
     }
 
     func testBestWindowSelectionIncludesMinimizedAndFullscreenCandidatesForRestore() {
-        let minimizedSelection = WindowMover.bestWindowSelection(
+        let minimizedSelection = WindowMatcher.bestWindowSelection(
             in: [candidate(title: "Budget", isMinimized: true)],
             title: "Budget",
             strictness: .strict
         )
-        let fullscreenSelection = WindowMover.bestWindowSelection(
+        let fullscreenSelection = WindowMatcher.bestWindowSelection(
             in: [candidate(title: "Inbox", isFullscreen: true)],
             title: "Inbox",
             strictness: .strict
         )
 
-        XCTAssertEqual(minimizedSelection, WindowMover.WindowSelection(index: 0, reason: .titleMatch))
-        XCTAssertEqual(fullscreenSelection, WindowMover.WindowSelection(index: 0, reason: .titleMatch))
+        XCTAssertEqual(minimizedSelection, WindowMatcher.WindowSelection(index: 0, reason: .titleMatch))
+        XCTAssertEqual(fullscreenSelection, WindowMatcher.WindowSelection(index: 0, reason: .titleMatch))
     }
 
     func testBestWindowSelectionRejectsAmbiguousSimilarTitleMatches() {
         let target = "Budget"
-        let selection = WindowMover.bestWindowSelection(
+        let selection = WindowMatcher.bestWindowSelection(
             in: [
                 candidate(title: "Budget 2025 – Numbers"),
                 candidate(title: "Budget 2026 – Numbers")
@@ -104,7 +104,7 @@ final class WindowMoverTests: XCTestCase {
 
     func testBestWindowSelectionUsesExactTitleOverFuzzyTitle() {
         let target = "Budget"
-        let selection = WindowMover.bestWindowSelection(
+        let selection = WindowMatcher.bestWindowSelection(
             in: [
                 candidate(title: "Budget 2026 – Numbers"),
                 candidate(title: "Budget")
@@ -113,18 +113,18 @@ final class WindowMoverTests: XCTestCase {
             strictness: .fuzzy
         )
 
-        XCTAssertEqual(selection, WindowMover.WindowSelection(index: 1, reason: .titleMatch))
+        XCTAssertEqual(selection, WindowMatcher.WindowSelection(index: 1, reason: .titleMatch))
     }
 
     func testBestWindowSelectionPrefersCGWindowIDWhenTitlesChanged() {
         let target = "⁨From⁩ • HBO Max – Brave"
         let capturedAt = Date(timeIntervalSince1970: 1_779_190_400)
-        let selection = WindowMover.bestWindowSelection(
+        let selection = WindowMatcher.bestWindowSelection(
             in: [
                 candidate(title: "New Tab – Brave", cgWindowID: 41),
                 candidate(title: "Downloads – Brave", cgWindowID: 42)
             ],
-            matching: WindowMover.WindowMatchRequest(
+            matching: WindowMatcher.WindowMatchRequest(
                 title: target,
                 processIdentifier: 1234,
                 capturedAt: capturedAt,
@@ -133,12 +133,12 @@ final class WindowMoverTests: XCTestCase {
             strictness: .fuzzy
         )
 
-        XCTAssertEqual(selection, WindowMover.WindowSelection(index: 1, reason: .cgWindowID))
+        XCTAssertEqual(selection, WindowMatcher.WindowSelection(index: 1, reason: .cgWindowID))
     }
 
     func testBestWindowSelectionDoesNotTrustReusedCGWindowIDAfterProcessRelaunch() {
         let capturedAt = Date(timeIntervalSince1970: 1_779_190_400)
-        let selection = WindowMover.bestWindowSelection(
+        let selection = WindowMatcher.bestWindowSelection(
             in: [
                 candidate(
                     title: "New Tab – Brave",
@@ -151,7 +151,7 @@ final class WindowMoverTests: XCTestCase {
                     cgWindowID: 43
                 )
             ],
-            matching: WindowMover.WindowMatchRequest(
+            matching: WindowMatcher.WindowMatchRequest(
                 title: "Saved Window That No Longer Exists",
                 processIdentifier: 1234,
                 capturedAt: capturedAt,
@@ -165,12 +165,12 @@ final class WindowMoverTests: XCTestCase {
 
     func testBestWindowSelectionDoesNotTrustCGWindowIDWithoutLaunchDate() {
         let capturedAt = Date(timeIntervalSince1970: 1_779_190_400)
-        let selection = WindowMover.bestWindowSelection(
+        let selection = WindowMatcher.bestWindowSelection(
             in: [
                 candidate(title: "New Tab", processLaunchDate: nil, cgWindowID: 42),
                 candidate(title: "Downloads", processLaunchDate: nil, cgWindowID: 43)
             ],
-            matching: WindowMover.WindowMatchRequest(
+            matching: WindowMatcher.WindowMatchRequest(
                 title: "Old Saved Title",
                 processIdentifier: 1234,
                 capturedAt: capturedAt,
@@ -184,30 +184,30 @@ final class WindowMoverTests: XCTestCase {
 
     func testBestWindowSelectionPrefersAccessibilityIdentifierWhenAvailable() {
         let target = "Budget"
-        let selection = WindowMover.bestWindowSelection(
+        let selection = WindowMatcher.bestWindowSelection(
             in: [
                 candidate(title: "Budget Copy", accessibilityIdentifier: "window-copy"),
                 candidate(title: "Budget Draft", accessibilityIdentifier: "window-main")
             ],
-            matching: WindowMover.WindowMatchRequest(
+            matching: WindowMatcher.WindowMatchRequest(
                 title: target,
                 accessibilityIdentifier: "window-main"
             ),
             strictness: .fuzzy
         )
 
-        XCTAssertEqual(selection, WindowMover.WindowSelection(index: 1, reason: .accessibilityIdentifier))
+        XCTAssertEqual(selection, WindowMatcher.WindowSelection(index: 1, reason: .accessibilityIdentifier))
     }
 
     func testBestWindowSelectionDoesNotFallbackWhenOnlyWindowHasDifferentAccessibilityIdentifier() {
-        let selection = WindowMover.bestWindowSelection(
+        let selection = WindowMatcher.bestWindowSelection(
             in: [
                 candidate(
                     title: "New Window",
                     accessibilityIdentifier: "live-window"
                 )
             ],
-            matching: WindowMover.WindowMatchRequest(
+            matching: WindowMatcher.WindowMatchRequest(
                 title: "Saved Window",
                 accessibilityIdentifier: "saved-window"
             ),
@@ -218,14 +218,14 @@ final class WindowMoverTests: XCTestCase {
     }
 
     func testBestWindowSelectionAllowsFallbackWhenSavedProcessIdentityIsStale() {
-        let selection = WindowMover.bestWindowSelection(
+        let selection = WindowMatcher.bestWindowSelection(
             in: [
                 candidate(
                     title: "New Tab - Brave",
                     accessibilityIdentifier: "live-window"
                 )
             ],
-            matching: WindowMover.WindowMatchRequest(
+            matching: WindowMatcher.WindowMatchRequest(
                 title: "Saved Browser Window",
                 accessibilityIdentifier: "saved-window",
                 rejectsConflictingAccessibilityIdentifier: false
@@ -233,40 +233,40 @@ final class WindowMoverTests: XCTestCase {
             strictness: .fuzzy
         )
 
-        XCTAssertEqual(selection, WindowMover.WindowSelection(index: 0, reason: .singleCandidateFallback))
+        XCTAssertEqual(selection, WindowMatcher.WindowSelection(index: 0, reason: .singleCandidateFallback))
     }
 
     func testBestWindowSelectionsAssignsMultipleExactMatchesOnce() {
-        let selections = WindowMover.bestWindowSelections(
+        let selections = WindowMatcher.bestWindowSelections(
             in: [
                 candidate(title: "Budget - Chrome"),
                 candidate(title: "Inbox - Chrome")
             ],
             matching: [
-                WindowMover.WindowMatchRequest(title: "Inbox - Chrome"),
-                WindowMover.WindowMatchRequest(title: "Budget - Chrome")
+                WindowMatcher.WindowMatchRequest(title: "Inbox - Chrome"),
+                WindowMatcher.WindowMatchRequest(title: "Budget - Chrome")
             ],
             strictness: .fuzzy
         )
 
-        XCTAssertEqual(selections[0], WindowMover.WindowSelection(index: 1, reason: .titleMatch))
-        XCTAssertEqual(selections[1], WindowMover.WindowSelection(index: 0, reason: .titleMatch))
+        XCTAssertEqual(selections[0], WindowMatcher.WindowSelection(index: 1, reason: .titleMatch))
+        XCTAssertEqual(selections[1], WindowMatcher.WindowSelection(index: 0, reason: .titleMatch))
         XCTAssertEqual(Set(selections.values.map(\.index)).count, selections.count)
     }
 
     func testBestWindowSelectionsDoesNotReuseOneLiveWindowForSeveralSavedWindows() {
-        let selections = WindowMover.bestWindowSelections(
+        let selections = WindowMatcher.bestWindowSelections(
             in: [
                 candidate(title: "Inbox - Chrome")
             ],
             matching: [
-                WindowMover.WindowMatchRequest(title: "Inbox - Chrome"),
-                WindowMover.WindowMatchRequest(title: "Budget - Chrome")
+                WindowMatcher.WindowMatchRequest(title: "Inbox - Chrome"),
+                WindowMatcher.WindowMatchRequest(title: "Budget - Chrome")
             ],
             strictness: .fuzzy
         )
 
-        XCTAssertEqual(selections[0], WindowMover.WindowSelection(index: 0, reason: .titleMatch))
+        XCTAssertEqual(selections[0], WindowMatcher.WindowSelection(index: 0, reason: .titleMatch))
         XCTAssertNil(selections[1])
     }
 
@@ -278,7 +278,7 @@ final class WindowMoverTests: XCTestCase {
             cgWindowID: nil,
             axElementHash: 77
         )
-        let selections = WindowMover.bestWindowSelections(
+        let selections = WindowMatcher.bestWindowSelections(
             in: [
                 candidate(
                     title: "Second Saved Window",
@@ -287,22 +287,22 @@ final class WindowMoverTests: XCTestCase {
                 )
             ],
             matching: [
-                WindowMover.WindowMatchRequest(
+                WindowMatcher.WindowMatchRequest(
                     title: "First Saved Window",
                     reservation: reservation
                 ),
-                WindowMover.WindowMatchRequest(title: "Second Saved Window")
+                WindowMatcher.WindowMatchRequest(title: "Second Saved Window")
             ],
             strictness: .fuzzy
         )
 
-        XCTAssertEqual(selections[0], WindowMover.WindowSelection(index: 0, reason: .cgWindowID))
+        XCTAssertEqual(selections[0], WindowMatcher.WindowSelection(index: 0, reason: .cgWindowID))
         XCTAssertNil(selections[1], "The pending snapshot must not claim the already-restored physical window")
     }
 
     func testLiveReservationDoesNotFallBackToDifferentWindowWithSameTitle() {
         let launchDate = Date(timeIntervalSince1970: 1_779_190_300)
-        let selection = WindowMover.bestWindowSelection(
+        let selection = WindowMatcher.bestWindowSelection(
             in: [
                 candidate(
                     title: "First Saved Window",
@@ -310,7 +310,7 @@ final class WindowMoverTests: XCTestCase {
                     axElementHash: 88
                 )
             ],
-            matching: WindowMover.WindowMatchRequest(
+            matching: WindowMatcher.WindowMatchRequest(
                 title: "First Saved Window",
                 reservation: WindowCandidateReservation(
                     processIdentifier: 1234,
@@ -360,13 +360,13 @@ final class WindowMoverTests: XCTestCase {
     }
 
     func testBestWindowSelectionsDoesNotGuessOneSavedWindowAmongSeveralNewBrowserWindows() {
-        let selections = WindowMover.bestWindowSelections(
+        let selections = WindowMatcher.bestWindowSelections(
             in: [
                 candidate(title: "New Tab - Brave"),
                 candidate(title: "Downloads - Brave")
             ],
             matching: [
-                WindowMover.WindowMatchRequest(title: "Saved Browser Window")
+                WindowMatcher.WindowMatchRequest(title: "Saved Browser Window")
             ],
             strictness: .fuzzy
         )
@@ -391,7 +391,7 @@ final class WindowMoverTests: XCTestCase {
             cgWindowID: cgWindowID,
             accessibilityIdentifier: accessibilityIdentifier,
             title: title,
-            normalizedTitle: WindowMover.normalizedTitle(title),
+            normalizedTitle: WindowTitleSimilarity.normalize(title),
             role: "AXWindow",
             isMinimized: isMinimized,
             isFullscreen: isFullscreen,

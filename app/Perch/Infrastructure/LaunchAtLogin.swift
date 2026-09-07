@@ -2,13 +2,27 @@ import Foundation
 import ServiceManagement
 
 enum LaunchAtLogin {
+    static var registrationStatus: SMAppService.Status {
+        SMAppService.mainApp.status
+    }
+
+    static var diagnosticStatus: String {
+        switch SMAppService.mainApp.status {
+        case .enabled: "enabled"
+        case .notRegistered: "notRegistered"
+        case .requiresApproval: "requiresApproval"
+        case .notFound: "notFound"
+        @unknown default: "unknown"
+        }
+    }
+
     static var isEnabled: Bool {
         isRegistrationActive(SMAppService.mainApp.status)
     }
 
     @MainActor
-    static var statusDescription: String {
-        switch SMAppService.mainApp.status {
+    static func statusDescription(for status: SMAppService.Status) -> String {
+        switch status {
         case .enabled:
             return L10n.text(.launchStatusEnabled)
         case .notRegistered:
