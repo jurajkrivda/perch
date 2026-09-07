@@ -127,6 +127,15 @@ struct WindowBatchMoveResult: Equatable, Sendable {
     }
 }
 
+enum WindowMoveEvent: Sendable {
+    /// Sent before the first frame write so even a partially completed or
+    /// cancelled write can be undone using the exact reserved live window.
+    case willMove(snapshotID: String, frame: CGRect, reservation: WindowCandidateReservation)
+    case completed(WindowBatchMoveResult)
+}
+
+typealias WindowMoveObserver = @Sendable (WindowMoveEvent) async -> Void
+
 struct WindowMoveCandidate: Equatable, Sendable {
     var bundleIdentifier: String
     var processIdentifier: Int32

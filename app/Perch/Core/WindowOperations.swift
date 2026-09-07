@@ -8,6 +8,11 @@ extension WindowSnapshotter: WindowSnapshotting {}
 
 protocol WindowMoving: Sendable {
     func move(
+        requests: [WindowBatchMoveRequest], bundleIdentifier: String,
+        strictness: MatchStrictness, observer: @escaping WindowMoveObserver
+    ) async throws -> [WindowBatchMoveResult]
+
+    func move(
         snapshot: WindowSnapshot,
         to frame: CGRect,
         attempts: Int,
@@ -22,6 +27,15 @@ protocol WindowMoving: Sendable {
 }
 
 extension WindowMoving {
+    func move(
+        requests: [WindowBatchMoveRequest], bundleIdentifier: String,
+        strictness: MatchStrictness, observer: @escaping WindowMoveObserver
+    ) async throws -> [WindowBatchMoveResult] {
+        let results = try await move(requests: requests, bundleIdentifier: bundleIdentifier, strictness: strictness)
+        for result in results { await observer(.completed(result)) }
+        return results
+    }
+
     func move(
         requests: [WindowBatchMoveRequest],
         bundleIdentifier: String,

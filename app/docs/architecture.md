@@ -11,7 +11,9 @@ can build without first installing XcodeGen.
 |---|---|---|
 | `PerchApp` | Process lifetime, single-instance lock, service composition, hotkey refresh | Matching or restore policy |
 | `SlotStore` actor | Serialized read/modify/write, validation, schema migration, private file permissions, quarantine and recovery notices | Window operations or UI |
-| `SlotEngine` | Public layout operations, exclusive save/restore, final restore preflight | Per-window matching and UI reporting |
+| `SlotEngine` and extensions | Layout capture, repair, preference/history operations, exclusive restore/retry/undo, final preflight | AX matching |
+| `RestoreSession` | Observable progress, partial reports, exact live reservations and in-memory undo frames | Persistence |
+| `LayoutHistory` | Valid previous layouts, private revision files, bounded retention | Moving windows |
 | `LayoutWindowRestorer` | Application grouping, optional launch, delayed-window retry, reservations and topology remapping | AX attribute decoding |
 | `WorkspaceApplicationLauncher` | OS application launch, bounded callback wait and cancellation | Window discovery or movement |
 | `WindowSnapshotter` actor | Consistent capture of eligible visible windows | Saving the document |
@@ -38,14 +40,16 @@ capture/move work runs on dedicated actors. `SlotStore` is a separate actor;
 its update closure completes within one actor turn. The application shares one
 live `SlotEngine`, including settings and diagnostics.
 
-Save and restore operations are mutually exclusive. Later requests fail with
+Capture, repair, restore, retry and undo operations are mutually exclusive. Later requests fail with
 `operationInProgress` instead of accumulating a queue of repeated hotkeys.
 Settings writes can still complete while a restore is waiting for displays.
 
 An automatic restore re-reads the document and validates mode, layout, session,
 generation and topology immediately before committing. Before
 commit, newer events can cancel it. After commit, the operation finishes and
-reports its result; quitting waits for that committed operation. Each application
+reports its result; quitting waits for that committed operation. Explicit user
+cancellation propagates to the managed restore task, preserving progress and undo
+for writes already attempted. Each application
 launch callback has a 10-second deadline and responds to task cancellation.
 Late callbacks cannot resume the operation again. Launch Services may still open
 the application later. Window polling has its own deadline; there is no single
@@ -75,7 +79,14 @@ geometry; they are redacted, not anonymous.
 Pending notices remain visible in the menu and settings across app launches.
 Acknowledgement renames only the originals included in that notice with an
 `.acknowledged` suffix, preserving contents and permissions. It does not hide a
-new corruption incident. Recovery from a valid backup remains a manual operation.
+new corruption incident. Valid previous layout versions can be recovered through Settings without moving
+windows. `LayoutHistory` keeps at most ten versions per layout and one hundred
+in total, including deleted layouts. Each capture change is backed up before the
+live document is replaced; a failed backup prevents the replacement. Settings-only
+writes do not create revisions. Recovered existing layouts keep current names and
+shortcuts; recovered deleted layouts receive no shortcut, avoiding conflicts.
+The preference map is optional in schema v3 settings and defaults to empty for
+older files. Its physical display UUID keys are removed from diagnostic exports.
 
 ## Verification and maintenance
 

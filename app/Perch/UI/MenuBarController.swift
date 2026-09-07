@@ -9,10 +9,11 @@ final class MenuBarController: NSObject {
     var slots = Slot.defaultSlots
     var settings = PerchSettings()
     var recoveryNotice: StoreRecoveryNotice?
-    var lastRestoreResult: SlotOperationResult?
+    var lastRestoreResult: SlotOperationResult? { slotEngine?.restoreSession.result }
     var lastAutomaticDecision: (key: LocalizationKey, argument: String?)?
     var hotkeyRegistrationState = HotkeyRegistrationState()
     private var languageChangeObserver: NSObjectProtocol?
+    private var restoreChangeObserver: NSObjectProtocol?
 
     private struct StatusItemPresentation {
         var title = "Perch"
@@ -20,7 +21,7 @@ final class MenuBarController: NSObject {
     }
     private var statusItemPresentation = StatusItemPresentation()
 
-    private enum LayoutOperationKind {
+    enum LayoutOperationKind {
         case save
         case restore
     }
@@ -45,6 +46,14 @@ final class MenuBarController: NSObject {
                 self?.rebuildMenu()
             }
         }
+        restoreChangeObserver = NotificationCenter.default.addObserver(
+            forName: .perchRestoreDidChange, object: slotEngine?.restoreSession, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.configureStatusItem()
+                self?.rebuildMenu()
+            }
+        }
     }
 
     private func configureStatusItem() {
@@ -53,26 +62,32 @@ final class MenuBarController: NSObject {
             return
         }
 
+        let session = slotEngine?.restoreSession
+        let running = session?.isRunning == true
         button.image = NSImage(
-            systemSymbolName: statusItemPresentation.symbolName,
+            systemSymbolName: running ? "arrow.triangle.2.circlepath" : statusItemPresentation.symbolName,
             accessibilityDescription: "Perch"
         )
         button.image?.isTemplate = true
         button.appearance = nil
         button.title = settings.showsMenuBarLabel ? " \(statusItemPresentation.title)" : ""
+        if running, let session, !session.isStabilizing {
+            button.title = " \(session.completedCount)/\(session.result?.total ?? 0)"
+        }
+        button.toolTip = running ? L10n.text(.restoreActivity) : "Perch"
         button.target = self
         button.action = #selector(showMenu)
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
     }
 
-    private func rebuildMenu() {
+    func rebuildMenu() {
         let menu = NSMenu()
 
         addAccessibilityWarning(to: menu)
         addStoreRecoveryWarning(to: menu)
         addHotkeyRegistrationWarning(to: menu)
         addLayoutItems(to: menu)
-        if lastRestoreResult != nil || lastAutomaticDecision != nil {
+        if lastRestoreResult != nil || lastAutomaticDecision != nil || slotEngine?.restoreSession.isRunning == true {
             menu.addItem(.separator())
         }
         addLastRestoreReport(to: menu)
@@ -81,13 +96,13 @@ final class MenuBarController: NSObject {
         menu.addItem(.separator())
 
         let createItem = NSMenuItem(
-            title: "\(L10n.text(.createLayout))…",
+            title: "\(L10n.text(.captureCurrentLayout))…",
             action: #selector(createLayout),
             keyEquivalent: ""
         )
         createItem.target = self
         createItem.image = menuIcon("plus")
-        createItem.isEnabled = slotEngine != nil
+        createItem.isEnabled = slotEngine != nil && AccessibilityManager.isTrusted() && slotEngine?.restoreSession.isRunning != true
         menu.addItem(createItem)
 
         let updateItem = NSMenuItem(
@@ -223,7 +238,7 @@ final class MenuBarController: NSObject {
     @objc private func createLayout() {
         guard let slotEngine,
               let name = promptForLayoutName(
-                  title: L10n.text(.createLayout),
+                  title: L10n.text(.captureCurrentLayout),
                   defaultName: L10n.text(.newLayoutDefaultName)
               )
         else {
@@ -232,7 +247,7 @@ final class MenuBarController: NSObject {
 
         Task { @MainActor in
             do {
-                let layout = try await slotEngine.createLayout(name: name)
+                let layout = try await slotEngine.createLayoutFromCurrentWindows(name: name)
                 ToastWindow.show(L10n.format(.createdLayoutFormat, layout.name))
                 reloadSlots()
             } catch {
@@ -265,6 +280,7 @@ final class MenuBarController: NSObject {
         // A global restore shortcut is also a confirmation of an open restore
         // suggestion, so no separate hotkey path is needed.
         RestorePromptWindow.dismissCurrentForRestore()
+        if preflight == nil, let slotEngine { RestoreReportWindowController.shared.show(engine: slotEngine) }
         return Task { @MainActor in
             guard !Task.isCancelled else { return }
             await performLayoutOperation(kind: .restore) {
@@ -296,7 +312,6 @@ final class MenuBarController: NSObject {
     }
 
     func refresh() {
-        lastRestoreResult = nil
         reloadSlots()
     }
 
@@ -328,7 +343,7 @@ final class MenuBarController: NSObject {
         NSApp.terminate(nil)
     }
 
-    private func reloadSlots() {
+    func reloadSlots() {
         guard let slotEngine else {
             slots = Slot.defaultSlots
             rebuildMenu()
@@ -348,96 +363,6 @@ final class MenuBarController: NSObject {
             }
 
             rebuildMenu()
-        }
-    }
-
-    private func performLayoutOperation(
-        kind: LayoutOperationKind,
-        _ operation: @escaping @MainActor () async throws -> SlotOperationResult?
-    ) async {
-        do {
-            guard let result = try await operation() else {
-                AppLog.menu.error("Layout operation unavailable because SlotEngine is missing")
-                return
-            }
-
-            AppLog.menu.info("Layout operation finished for \(result.slotName, privacy: .private): \(result.succeeded)/\(result.total)")
-            switch kind {
-            case .save:
-                lastRestoreResult = nil
-            case .restore:
-                lastRestoreResult = result
-            }
-            showToast(for: result, kind: kind)
-            reloadSlots()
-        } catch SlotEngineError.operationInProgress {
-            AppLog.menu.info("Ignored layout operation because another one is still running")
-        } catch SlotEngineError.restorePreflightRejected {
-            AppLog.menu.info("Cancelled automatic restore because its preflight was rejected")
-        } catch is CancellationError {
-            AppLog.menu.info("Layout operation cancelled; some windows may already have moved")
-        } catch {
-            // The description can carry user content (saved window titles), so it stays private.
-            AppLog.menu.error("Layout operation failed: \(error.localizedDescription, privacy: .private)")
-            if isAccessibilityPermissionError(error) {
-                await handleAccessibilityPermissionFailure()
-            } else {
-                ToastWindow.show(LocalizedErrorMessages.message(for: error))
-            }
-        }
-    }
-
-    private func handleAccessibilityPermissionFailure() async {
-        switch AccessibilityManager.permissionState() {
-        case .trusted:
-            rebuildMenu()
-            ToastWindow.show(L10n.text(.accessibilityGranted))
-        case .pending:
-            AccessibilityManager.logStatus(reason: "operation failed while pending")
-            rebuildMenu()
-            ToastWindow.show(L10n.text(.accessibilityPermissionPending))
-        case .notRequested:
-            let isTrusted = await AccessibilityManager.requestPermissionAndWait()
-            rebuildMenu()
-            ToastWindow.show(
-                isTrusted
-                ? L10n.text(.accessibilityGranted)
-                : L10n.text(.accessibilityBannerRequiredMessage)
-            )
-        }
-    }
-
-    private func accessibilityMenuTitle(for permissionState: AccessibilityManager.PermissionState) -> String {
-        switch permissionState {
-        case .trusted:
-            return ""
-        case .notRequested:
-            return L10n.text(.grantAccessibilityPermission)
-        case .pending:
-            return L10n.text(.grantAccessibilityPermissionPending)
-        }
-    }
-
-    private func showToast(for result: SlotOperationResult, kind: LayoutOperationKind) {
-        switch kind {
-        case .save:
-            ToastWindow.showSavedWindowCount(result.succeeded)
-        case .restore:
-            ToastWindow.show(result.restoreSummary, symbolName: restoreToastSymbol(for: result))
-        }
-    }
-
-    private func restoreToastSymbol(for result: SlotOperationResult) -> String {
-        result.skipped == 0 ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
-    }
-
-    private func isAccessibilityPermissionError(_ error: Error) -> Bool {
-        switch error {
-        case WindowSnapshotterError.accessibilityPermissionMissing,
-             WindowMoverError.accessibilityPermissionMissing:
-            true
-        default:
-            false
         }
     }
 

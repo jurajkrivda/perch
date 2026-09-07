@@ -26,6 +26,8 @@ struct PerchSettings: Codable, Equatable, Sendable {
     var opensMissingApplicationsOnRestore: Bool
     var autoRestoreMode: AutoRestoreMode
     var autoRestoreSettleTimeout: TimeInterval
+    /// Explicit choices keyed by display identity, independent of save order.
+    var preferredLayoutsByTopology: [String: String]
     /// Positional save shortcuts disabled during legacy migration because an
     /// explicit restore shortcut already owns the same binding.
     var disabledDefaultSaveHotkeys: [HotkeyBinding]
@@ -38,7 +40,8 @@ struct PerchSettings: Codable, Equatable, Sendable {
         opensMissingApplicationsOnRestore: Bool = false,
         autoRestoreMode: AutoRestoreMode = .prompt,
         autoRestoreSettleTimeout: TimeInterval = 10,
-        disabledDefaultSaveHotkeys: [HotkeyBinding] = []
+        disabledDefaultSaveHotkeys: [HotkeyBinding] = [],
+        preferredLayoutsByTopology: [String: String] = [:]
     ) {
         self.stabilizationTimeout = stabilizationTimeout
         self.retryAttempts = retryAttempts
@@ -48,10 +51,14 @@ struct PerchSettings: Codable, Equatable, Sendable {
         self.autoRestoreMode = autoRestoreMode
         self.autoRestoreSettleTimeout = autoRestoreSettleTimeout
         self.disabledDefaultSaveHotkeys = disabledDefaultSaveHotkeys
+        self.preferredLayoutsByTopology = preferredLayoutsByTopology
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        preferredLayoutsByTopology = try container.decodeIfPresent(
+            [String: String].self, forKey: .preferredLayoutsByTopology
+        ) ?? [:]
         stabilizationTimeout = try container.decodeIfPresent(TimeInterval.self, forKey: .stabilizationTimeout) ?? 2.5
         retryAttempts = try container.decodeIfPresent(Int.self, forKey: .retryAttempts) ?? 3
         matchStrictness = try container.decodeIfPresent(MatchStrictness.self, forKey: .matchStrictness) ?? .fuzzy

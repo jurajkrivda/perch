@@ -13,20 +13,30 @@ struct LayoutWindowRestorer {
     func restore(
         snapshots: [WindowSnapshot],
         settings: PerchSettings,
-        displays: [DisplayInfo]
+        displays: [DisplayInfo],
+        preservedResults: [WindowBatchMoveResult] = [],
+        observer: @escaping WindowMoveObserver = { _ in }
     ) async throws -> [RestoreWindowReport] {
         guard let bundleIdentifier = snapshots.first?.bundleIdentifier else {
             return []
         }
 
-        let requests = moveRequests(for: snapshots, settings: settings, displays: displays)
+        var requests = moveRequests(for: snapshots, settings: settings, displays: displays)
+        for index in requests.indices {
+            if let preserved = preservedResults.first(where: { $0.snapshotID == requests[index].snapshot.id }) {
+                requests[index].reservation = preserved.reservation
+                requests[index].shouldMove = false
+            }
+        }
 
         do {
             var results = try await windowMover.move(
                 requests: requests,
                 bundleIdentifier: bundleIdentifier,
-                strictness: settings.matchStrictness
+                strictness: settings.matchStrictness,
+                observer: observer
             )
+            results = preserving(preservedResults, in: results)
 
             if resultsContainRetryableLaunchMiss(results) {
                 // At login or wake an app may already be running while its
@@ -35,7 +45,8 @@ struct LayoutWindowRestorer {
                 results = try await retryRestoreAfterLaunch(
                     snapshots: snapshots, bundleIdentifier: bundleIdentifier,
                     settings: settings, initialResults: results,
-                    initialTopology: DisplayTopologyFingerprint(displays: displays)
+                    initialTopology: DisplayTopologyFingerprint(displays: displays),
+                    preservedResults: preservedResults, observer: observer
                 )
             }
 
@@ -53,7 +64,7 @@ struct LayoutWindowRestorer {
 
             return try await launchAndRestore(
                 snapshots: snapshots,
-                settings: settings
+                settings: settings, preservedResults: preservedResults, observer: observer
             )
         } catch is CancellationError {
             throw CancellationError()
@@ -66,7 +77,9 @@ struct LayoutWindowRestorer {
 
     private func launchAndRestore(
         snapshots: [WindowSnapshot],
-        settings: PerchSettings
+        settings: PerchSettings,
+        preservedResults: [WindowBatchMoveResult],
+        observer: @escaping WindowMoveObserver
     ) async throws -> [RestoreWindowReport] {
         guard let bundleIdentifier = snapshots.first?.bundleIdentifier else {
             return []
@@ -79,7 +92,8 @@ struct LayoutWindowRestorer {
             let results = try await retryRestoreAfterLaunch(
                 snapshots: snapshots,
                 bundleIdentifier: bundleIdentifier,
-                settings: settings
+                settings: settings, initialResults: preservedResults,
+                preservedResults: preservedResults, observer: observer
             )
 
             return RestoreReportBuilder.reports(
@@ -117,9 +131,12 @@ struct LayoutWindowRestorer {
         bundleIdentifier: String,
         settings: PerchSettings,
         initialResults: [WindowBatchMoveResult] = [],
-        initialTopology: DisplayTopologyFingerprint? = nil
+        initialTopology: DisplayTopologyFingerprint? = nil,
+        preservedResults: [WindowBatchMoveResult] = [],
+        observer: @escaping WindowMoveObserver = { _ in }
     ) async throws -> [WindowBatchMoveResult] {
         let deadline = ContinuousClock.now.advanced(by: .seconds(launchRetryTimeout))
+        let protectedIDs = Set(preservedResults.map(\.snapshotID))
         var successfulSnapshotIDs = Set(initialResults.filter(\.isSuccess).map(\.snapshotID))
         var reservationsBySnapshotID = Dictionary(
             initialResults.compactMap { result in
@@ -154,8 +171,8 @@ struct LayoutWindowRestorer {
                 // A window that was correct for the previous topology is no
                 // longer a completed restore. Keep its exact live reservation,
                 // but remap every snapshot once for this new topology.
-                successfulSnapshotIDs.removeAll()
-                for snapshot in snapshots {
+                successfulSnapshotIDs = protectedIDs
+                for snapshot in snapshots where !protectedIDs.contains(snapshot.id) {
                     latestResultsBySnapshotID[snapshot.id] = WindowBatchMoveResult(
                         snapshotID: snapshot.id,
                         restoredFrame: nil,
@@ -186,9 +203,10 @@ struct LayoutWindowRestorer {
                 let results = try await windowMover.move(
                     requests: requests,
                     bundleIdentifier: bundleIdentifier,
-                    strictness: settings.matchStrictness
+                    strictness: settings.matchStrictness,
+                    observer: observer
                 )
-                for result in results {
+                for result in results where !protectedIDs.contains(result.snapshotID) {
                     // A completed window remains successful even if a later
                     // reservation-only pass cannot rediscover it transiently.
                     if successfulSnapshotIDs.contains(result.snapshotID), !result.isSuccess {
@@ -253,7 +271,7 @@ struct LayoutWindowRestorer {
                     if hasPendingTopologyRemap {
                         // The last positions were verified against a topology
                         // that has already changed again. Do not report success.
-                        for snapshot in snapshots {
+                        for snapshot in snapshots where !protectedIDs.contains(snapshot.id) {
                             latestResultsBySnapshotID[snapshot.id] = WindowBatchMoveResult(
                                 snapshotID: snapshot.id, restoredFrame: nil,
                                 matchReason: nil, error: .frameWriteFailed,
@@ -289,6 +307,12 @@ struct LayoutWindowRestorer {
 
             return (bundleIdentifier, snapshots)
         }
+    }
+
+    private func preserving(
+        _ preserved: [WindowBatchMoveResult], in results: [WindowBatchMoveResult]
+    ) -> [WindowBatchMoveResult] {
+        results.map { result in preserved.first(where: { $0.snapshotID == result.snapshotID }) ?? result }
     }
 
     private func moveRequests(

@@ -12,7 +12,7 @@ extension MenuBarController {
             return
         }
 
-        let canUseEngine = slotEngine != nil
+        let canUseEngine = slotEngine != nil && slotEngine?.restoreSession.isRunning != true
         let canSave = canUseEngine && AccessibilityManager.isTrusted()
         let document = SlotStoreDocument(slots: slots, settings: settings)
 

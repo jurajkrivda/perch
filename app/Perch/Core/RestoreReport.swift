@@ -56,6 +56,8 @@ enum RestoreWindowOutcome: Equatable, Sendable {
     case ambiguousWindowMatch
     case frameWriteFailed
     case skipped
+    case pending
+    case cancelled
 
     var isSuccess: Bool {
         switch self {
@@ -67,7 +69,7 @@ enum RestoreWindowOutcome: Equatable, Sendable {
              .windowNotFound,
              .ambiguousWindowMatch,
              .frameWriteFailed,
-             .skipped:
+             .skipped, .pending, .cancelled:
             false
         }
     }

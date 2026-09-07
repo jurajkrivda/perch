@@ -27,7 +27,21 @@ Perch appears in the macOS menu bar as `Perch`.
 - Restore layout 1-9 by order: `Command` + `Option` + `1...9`
 - Custom restore shortcuts can be recorded per layout in Settings.
 
-Settings also let you create, rename, and delete layouts, toggle launch at login, and hide the `Perch` text label so only the menu bar icon remains.
+Use **Save Current Layout** to name and capture the windows that are open now.
+Settings show each layout's save time, a display/window preview, and a preferred
+layout for each display arrangement. Without a preference, automatic restore
+chooses the most recently saved usable match.
+
+**Restore Progress and Results** shows individual window outcomes and lets you
+stop remaining work, retry unfinished windows, open a closed app for one attempt,
+or assign a different open window to a saved position. **Undo Last Restore**
+returns the same live windows to their original positions on the same displays;
+it is available until another full restore or app restart.
+
+**Saved Versions** keeps ten previous versions per layout, one hundred in total,
+on this Mac. Recovering a version changes saved data without moving windows.
+Deleted layouts can also be recovered there. Settings also control launch at login
+and whether the menu bar shows the `Perch` text label.
 
 The first save or restore requires Accessibility permission. Use the Perch menu item `Grant Accessibility Permission...` if macOS has not granted it yet.
 

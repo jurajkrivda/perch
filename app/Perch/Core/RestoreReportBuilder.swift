@@ -92,7 +92,7 @@ enum RestoreReportBuilder {
         }
     }
 
-    private static func applicationDisplayName(for bundleIdentifier: String) -> String {
+    static func applicationDisplayName(for bundleIdentifier: String) -> String {
         guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) else {
             return bundleIdentifier
         }

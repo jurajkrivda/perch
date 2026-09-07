@@ -108,6 +108,7 @@ struct AutoRestoreInput: Sendable {
     var topologyAtLastDecision: DisplayTopologyFingerprint?
     var slots: [Slot]
     var alreadyPromptedForCurrentTopology: Bool
+    var preferredLayoutsByTopology: [String: String] = [:]
 }
 
 enum AutoRestorePolicy {
@@ -132,9 +133,10 @@ enum AutoRestorePolicy {
             return .doNothing(reason: "already offered")
         }
 
-        guard let candidate = input.slots
-            .filter({ $0.capturedTopology?.matchesIdentity(of: input.currentTopology) == true })
-            .max(by: wasSavedBefore)
+        guard let candidate = selectedLayout(
+            slots: input.slots, topology: input.currentTopology,
+            preferences: input.preferredLayoutsByTopology
+        )
         else {
             return .doNothing(reason: "no layout for this arrangement")
         }
@@ -148,6 +150,22 @@ enum AutoRestorePolicy {
         }
 
         return .prompt(layoutID: candidate.id, layoutName: candidate.name)
+    }
+
+    static func selectedLayout(
+        slots: [Slot], topology: DisplayTopologyFingerprint,
+        preferences: [String: String]
+    ) -> Slot? {
+        let matching = slots.filter {
+            $0.capturedTopology?.matchesIdentity(of: topology) == true
+        }
+        if let preferredID = preferences[topology.identity],
+           let preferred = matching.first(where: { $0.id == preferredID && !$0.windows.isEmpty }) {
+            return preferred
+        }
+        // An empty placeholder must not hide a usable saved layout.
+        return matching.filter { !$0.windows.isEmpty }.max(by: wasSavedBefore)
+            ?? matching.max(by: wasSavedBefore)
     }
 
     private static func wasSavedBefore(_ lhs: Slot, _ rhs: Slot) -> Bool {

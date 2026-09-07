@@ -2,47 +2,39 @@ import AppKit
 
 extension MenuBarController {
     func addLastRestoreReport(to menu: NSMenu) {
-        guard let lastRestoreResult else {
-            return
+        guard let session = slotEngine?.restoreSession,
+              session.result != nil || session.isRunning else { return }
+        let item = NSMenuItem(title: L10n.text(.restoreActivity), action: #selector(showRestoreReport), keyEquivalent: "")
+        item.target = self
+        item.image = menuIcon("list.bullet.rectangle")
+        menu.addItem(item)
+        if session.isRunning {
+            let stop = NSMenuItem(title: L10n.text(.stopRestore), action: #selector(stopRestore), keyEquivalent: "")
+            stop.target = self
+            stop.image = menuIcon("stop.circle")
+            stop.isEnabled = !session.isCancelling
+            menu.addItem(stop)
+        } else if session.canUndo {
+            let undo = NSMenuItem(title: L10n.text(.undoLastRestore), action: #selector(undoRestore), keyEquivalent: "")
+            undo.target = self
+            undo.image = menuIcon("arrow.uturn.backward")
+            menu.addItem(undo)
         }
+    }
 
-        let reportItem = NSMenuItem(title: L10n.text(.lastRestoreReport), action: nil, keyEquivalent: "")
-        reportItem.image = menuIcon("list.bullet.rectangle")
+    @objc func showRestoreReport() {
+        guard let slotEngine else { return }
+        RestoreReportWindowController.shared.show(engine: slotEngine)
+    }
 
-        let submenu = NSMenu()
+    @objc private func stopRestore() { slotEngine?.cancelRestore() }
 
-        let summaryItem = NSMenuItem(
-            title: truncatedMenuText(lastRestoreResult.restoreSummary),
-            action: nil,
-            keyEquivalent: ""
-        )
-        summaryItem.toolTip = lastRestoreResult.restoreSummary
-        summaryItem.isEnabled = false
-        submenu.addItem(summaryItem)
-
-        let reportRows = lastRestoreResult.details.filter { !$0.isSuccess || $0.didLaunchApplication || $0.matchReason != nil }
-        if reportRows.isEmpty {
-            let allRestoredItem = NSMenuItem(title: L10n.text(.allWindowsRestored), action: nil, keyEquivalent: "")
-            allRestoredItem.image = menuIcon("checkmark.circle")
-            allRestoredItem.isEnabled = false
-            submenu.addItem(allRestoredItem)
-        } else {
-            submenu.addItem(.separator())
-            for report in reportRows {
-                let item = NSMenuItem(
-                    title: truncatedMenuText(menuTitle(for: report)),
-                    action: nil,
-                    keyEquivalent: ""
-                )
-                item.toolTip = menuTooltip(for: report)
-                item.image = menuIcon(menuIconName(for: report.outcome))
-                item.isEnabled = false
-                submenu.addItem(item)
-            }
+    @objc private func undoRestore() {
+        guard let slotEngine else { return }
+        showRestoreReport()
+        Task { @MainActor in
+            await performLayoutOperation(kind: .restore) { try await slotEngine.undoLastRestore() }
         }
-
-        reportItem.submenu = submenu
-        menu.addItem(reportItem)
     }
 
     func addLastAutomaticDecision(to menu: NSMenu) {
@@ -65,73 +57,7 @@ extension MenuBarController {
         menu.addItem(item)
     }
 
-    private func menuTitle(for report: RestoreWindowReport) -> String {
-        let outcomeKey: LocalizationKey = switch report.outcome {
-        case .restored: .menuOutcomeRestored
-        case .launchedAndRestored: .menuOutcomeOpenedAndRestored
-        case .appNotInstalled: .menuOutcomeNotInstalled
-        case .launchFailed: .menuOutcomeLaunchFailed
-        case .appNotRunning: .menuOutcomeClosed
-        case .windowNotFound: .menuOutcomeWindowNotFound
-        case .ambiguousWindowMatch: .menuOutcomeAmbiguousWindows
-        case .frameWriteFailed: .menuOutcomeMoveFailed
-        case .skipped: .menuOutcomeSkipped
-        }
-
-        return "\(report.appName): \(L10n.text(outcomeKey))"
+    private func truncatedMenuText(_ text: String, limit: Int = 46) -> String {
+        text.count > limit ? "\(text.prefix(max(limit - 1, 0)))…" : text
     }
-
-    private func menuTooltip(for report: RestoreWindowReport) -> String {
-        var lines = [
-            "\(L10n.text(.appLabel)): \(report.appName)",
-            "\(L10n.text(.bundleIDLabel)): \(report.bundleIdentifier)",
-            "\(L10n.text(.windowLabel)): \(report.windowTitle)"
-        ]
-
-        if report.didLaunchApplication {
-            lines.append(L10n.text(.openedDuringRestore))
-        }
-
-        if let matchReason = report.matchReason {
-            lines.append("\(L10n.text(.matchedByLabel)): \(matchReason.userDescription)")
-        }
-
-        if let message = report.message, !message.isEmpty {
-            lines.append("\(L10n.text(.reasonLabel)): \(message)")
-        }
-
-        return lines.joined(separator: "\n")
-    }
-
-    private func menuIconName(for outcome: RestoreWindowOutcome) -> String {
-        switch outcome {
-        case .restored:
-            "checkmark.circle"
-        case .launchedAndRestored:
-            "arrow.up.forward.app"
-        case .appNotInstalled:
-            "questionmark.app"
-        case .launchFailed:
-            "exclamationmark.triangle"
-        case .appNotRunning:
-            "app"
-        case .windowNotFound:
-            "rectangle.dashed"
-        case .ambiguousWindowMatch:
-            "questionmark.square.dashed"
-        case .frameWriteFailed:
-            "rectangle.badge.exclamationmark"
-        case .skipped:
-            "minus.circle"
-        }
-    }
-
-    private func truncatedMenuText(_ text: String, limit: Int = 30) -> String {
-        guard text.count > limit else {
-            return text
-        }
-
-        return "\(text.prefix(max(limit - 1, 0)))…"
-    }
-
 }

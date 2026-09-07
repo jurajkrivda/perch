@@ -25,11 +25,13 @@ final class SettingsModel {
     var recoveryNotice: StoreRecoveryNotice?
     var recoveryErrorMessage: String?
     var isAcknowledgingRecovery = false
+    var currentTopology = DisplayManager.currentTopologyFingerprint()
+    var changingLayoutID: String?
     var accessibilityResetError: String?
     var hasRequestedAccessibilityPermission = AccessibilityManager.hasRequestedPermissionForCurrentApp()
     var localization = LocalizationManager.shared
 
-    private var slotEngine: SlotEngine?
+    var slotEngine: SlotEngine?
     private var accessibilityRefreshTask: Task<Void, Never>?
     private var documentRefreshTask: Task<Void, Never>?
     private var documentMutationTail: Task<Void, Never>?
@@ -97,6 +99,7 @@ final class SettingsModel {
             let previousDrafts = layoutNameDrafts
 
             document = loadedDocument
+            currentTopology = DisplayManager.currentTopologyFingerprint()
             recoveryNotice = loadedRecoveryNotice
             applyDisplayedSettings()
             layoutNameDrafts = Dictionary(uniqueKeysWithValues: loadedDocument.slots.map { slot in
@@ -141,7 +144,7 @@ final class SettingsModel {
 
         enqueueDocumentMutation(
             operation: {
-                _ = try await slotEngine.createLayout(name: name)
+                _ = try await slotEngine.createLayoutFromCurrentWindows(name: name)
             },
             completion: { [weak self] succeeded in
                 guard let self else { return }
@@ -198,7 +201,7 @@ final class SettingsModel {
         )
     }
 
-    private func enqueueDocumentMutation(
+    func enqueueDocumentMutation(
         operation: @escaping @MainActor @Sendable () async throws -> Void,
         completion: @escaping @MainActor @Sendable (Bool) -> Void
     ) {
