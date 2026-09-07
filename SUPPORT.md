@@ -53,7 +53,10 @@ After a restart, also check **Launch at login** and its approval status in
 macOS Login Items. Save a layout while all intended displays are connected;
 Perch selects the most recently saved layout for that display arrangement.
 It restores saved positions, not an unsaved arrangement from before shutdown.
-Keyboard or pointer input while displays settle makes Automatic mode ask first.
+Automatic mode restores without confirmation once the session is unlocked and
+displays have settled, even while you use the keyboard or mouse. Choose **Ask**
+if you want to approve each restore. Switching an open offer to Automatic
+applies that choice; switching to Off dismisses the offer.
 With **Open missing applications** off, closed applications remain closed.
 
 **Saved layouts need attention.** Perch could not read a saved-layout file and

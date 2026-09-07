@@ -137,35 +137,28 @@ final class AutoRestoreAttemptStateTests: XCTestCase {
 
     func testLateDisplayWaveRetainsWakeForReplacementDecision() {
         var state = AutoRestoreDecisionContextState()
-        let wakeStartedAt = Date(timeIntervalSince1970: 10)
-        let displayStartedAt = Date(timeIntervalSince1970: 20)
 
         _ = state.begin(
             generation: 1,
-            reason: .systemWake,
-            triggerStartedAt: wakeStartedAt
+            reason: .systemWake
         )
         let replacement = state.begin(
             generation: 2,
-            reason: .displayReconfiguration,
-            triggerStartedAt: displayStartedAt
+            reason: .displayReconfiguration
         )
 
         XCTAssertEqual(replacement.reason, .systemWake)
-        XCTAssertEqual(replacement.triggerStartedAt, wakeStartedAt)
     }
 
     func testStaleDecisionCannotClearReplacementContext() throws {
         var state = AutoRestoreDecisionContextState()
         _ = state.begin(
             generation: 1,
-            reason: .systemWake,
-            triggerStartedAt: Date(timeIntervalSince1970: 10)
+            reason: .systemWake
         )
         _ = state.begin(
             generation: 2,
-            reason: .displayReconfiguration,
-            triggerStartedAt: Date(timeIntervalSince1970: 20)
+            reason: .displayReconfiguration
         )
 
         state.finish(generation: 1)
@@ -176,60 +169,49 @@ final class AutoRestoreAttemptStateTests: XCTestCase {
 
     func testPendingPromptRetainsContextForLateDisplayWave() throws {
         var state = AutoRestoreDecisionContextState()
-        let wakeStartedAt = Date(timeIntervalSince1970: 10)
         _ = state.begin(
             generation: 1,
-            reason: .systemWake,
-            triggerStartedAt: wakeStartedAt
+            reason: .systemWake
         )
 
         state.finish(generation: 1, hasPendingAttempt: true)
         let replacement = state.begin(
             generation: 2,
-            reason: .displayReconfiguration,
-            triggerStartedAt: Date(timeIntervalSince1970: 30)
+            reason: .displayReconfiguration
         )
 
         XCTAssertEqual(replacement.reason, .systemWake)
-        XCTAssertEqual(replacement.triggerStartedAt, wakeStartedAt)
     }
 
     func testFinishedWakeDoesNotLeakIntoIndependentDisplayBurst() throws {
         var state = AutoRestoreDecisionContextState()
         _ = state.begin(
             generation: 1,
-            reason: .screensWake,
-            triggerStartedAt: Date(timeIntervalSince1970: 10)
+            reason: .screensWake
         )
         state.finish(generation: 1)
 
         let next = state.begin(
             generation: 2,
-            reason: .displayReconfiguration,
-            triggerStartedAt: Date(timeIntervalSince1970: 30)
+            reason: .displayReconfiguration
         )
 
         XCTAssertEqual(next.reason, .displayReconfiguration)
     }
 
-    func testHiddenSessionCarriesWakeButUsesFreshTimestamp() {
+    func testHiddenSessionCarriesWakeIntoUnlock() {
         var state = AutoRestoreDecisionContextState()
         _ = state.begin(
             generation: 1,
-            reason: .systemWake,
-            triggerStartedAt: Date(timeIntervalSince1970: 10)
+            reason: .systemWake
         )
         state.sessionBecameHidden()
-
-        let unlockStartedAt = Date(timeIntervalSince1970: 40)
         let unlock = state.begin(
             generation: 2,
-            reason: .screenUnlock,
-            triggerStartedAt: unlockStartedAt
+            reason: .screenUnlock
         )
 
         XCTAssertEqual(unlock.reason, .systemWake)
-        XCTAssertEqual(unlock.triggerStartedAt, unlockStartedAt)
     }
 
     private func topology(
@@ -273,7 +255,6 @@ final class AutoRestoreAttemptStateTests: XCTestCase {
                 windows: [snapshot],
                 capturedTopology: topology
             )],
-            userInteractedSinceTrigger: false,
             alreadyPromptedForCurrentTopology: state.alreadyPromptedForCurrentTopology
         ))
     }

@@ -26,8 +26,8 @@ Perch is free and open source under the Apache License 2.0.
   changes, Perch waits for things to settle and offers to restore the layout
   saved for that arrangement. It asks by default — nothing moves without your
   confirmation. Fully automatic mode is available if you prefer it.
-  Turn on **Launch at login** for restores after a restart. Automatic mode asks
-  first if you have already used the keyboard or mouse while displays settle.
+  Turn on **Launch at login** for restores after a restart. Automatic mode
+  restores without confirmation, including while you use the keyboard or mouse.
 - **Multiple displays.** Layouts remember which physical display each window
   belonged to, by display UUID, so a window goes back to the right screen even
   if the arrangement shifted.

@@ -20,7 +20,7 @@ can build without first installing XcodeGen.
 | `AccessibilityValues` / `CGWindowCatalog` | Shared AX decoding and CG/AX correlation | Restore orchestration |
 | `WindowGeometry` / `DisplayManager` | Target frames, coordinate conversion, physical display identity | Selecting a saved layout |
 | `EnvironmentChangeObserver` / `DisplayStabilizer` | Session, sleep and display signals; coalescing; monotonic settling | Selecting or restoring a layout |
-| `AutoRestorePolicy` | Pure decision from settings, topology, saved layouts and interaction | Timers or UI |
+| `AutoRestorePolicy` | Pure decision from settings, topology and saved layouts | Timers or UI |
 | `AutoRestoreCoordinator` | Attempts, generation validity, commit boundary and presentation through `AutoRestorePresenting` | AX calls |
 | `MenuBarController` and extensions | Menu actions, layout management, prompt/toast/report presentation | Persistence implementation |
 | `SettingsModel` | UI loading, serialized optimistic writes, errors and stale-task protection | Owning a second live store |
@@ -43,13 +43,19 @@ Save and restore operations are mutually exclusive. Later requests fail with
 Settings writes can still complete while a restore is waiting for displays.
 
 An automatic restore re-reads the document and validates mode, layout, session,
-generation, topology and user interaction immediately before committing. Before
+generation and topology immediately before committing. Before
 commit, newer events can cancel it. After commit, the operation finishes and
 reports its result; quitting waits for that committed operation. Each application
 launch callback has a 10-second deadline and responds to task cancellation.
 Late callbacks cannot resume the operation again. Launch Services may still open
 the application later. Window polling has its own deadline; there is no single
 global deadline across all application groups and synchronous AX calls.
+
+Automatic mode never requires confirmation because of keyboard or pointer input.
+The policy has no input-activity dependency. Switching a pending offer from Ask
+to Automatic invalidates its old callback and re-evaluates the current saved
+layout. Hidden or changed displays still require the observer's settling path.
+Switching to Ask before commit creates an offer; switching to Off cancels it.
 
 Saving checks topology before and after capture. A changed configuration or
 incomplete AX read rejects the save without replacing the previous layout.

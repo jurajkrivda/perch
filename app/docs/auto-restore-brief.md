@@ -17,8 +17,8 @@ Modes:
 - **Off:** environment events do not restore or offer a layout.
 - **Ask:** after startup, wake or a changed display arrangement, offer the matching
   layout once the session is visible and displays have settled.
-- **Automatic:** restore without confirmation only if the user has not interacted
-  since the trigger or within the recent-input safety window. Otherwise ask.
+- **Automatic:** restore without confirmation after unlocking and display settling,
+  including while the user types, scrolls, or moves the pointer.
 
 **Launch at login** must be registered and approved in macOS for Perch to run
 after a computer restart. Accessibility permission is separately required for
@@ -50,14 +50,18 @@ those windows is independent of the setting that launches closed applications.
    observed sleep cycle and no-op unlock/display callbacks do not create a new
    completed offer for the same topology.
 7. Policy matches the set of display UUIDs and the main display, ignoring bounds.
-   It chooses the most recently saved matching layout and checks mode/input.
+   It chooses the most recently saved matching layout and checks the selected mode.
 8. Immediately before automatic or prompt-confirmed movement, the engine loads
    a fresh document. The coordinator checks the current mode, layout eligibility,
-   event generation, session and topology again. Automatic mode also rechecks input.
+   event generation, session and topology again.
 
 Invalidating a prompt makes its stale confirmation callback ineffective. Turning
 the mode off dismisses an outstanding offer. New display events invalidate an
 uncommitted attempt and can offer again after the new settling window.
+Switching an outstanding offer from Ask to Automatic dismisses it and restores
+the current matching layout without a click, provided the session and display
+configuration are still ready. Changing modes does not permit a hidden or
+unsettled restore, and stale offer callbacks cannot start a second operation.
 
 ## Window-operation invariants
 
@@ -100,7 +104,7 @@ actual results for this matrix on an installed, signed build before releasing:
 | Wake with unchanged displays, both laptop-only and docked | One restore opportunity per sleep cycle | Pending |
 | Late screen-wake notification following system wake | No duplicate completed offer for the same arrangement | Pending |
 | Locked screen, password unlock, Touch ID, fast-user switching | No hidden prompt expiry or uncommitted movement behind locked UI | Pending |
-| Type or move the pointer while displays settle | Automatic mode asks first | Pending |
+| Type, scroll, or move the pointer while displays settle | Automatic restores without confirmation; Ask still waits for confirmation | Pending |
 | Slow USB-C/DisplayLink dock, disconnect/reconnect, clamshell | Correct final layout; stale prompts cannot restore | Pending |
 | Change resolution, main display or arrangement; two identical monitor models | Correct identity selection and frame remapping | Pending |
 | Apps already running with delayed windows; closed apps with opening off/on | Retry existing windows; launch only when enabled | Pending |

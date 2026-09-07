@@ -107,7 +107,6 @@ struct AutoRestoreInput: Sendable {
     var currentTopology: DisplayTopologyFingerprint
     var topologyAtLastDecision: DisplayTopologyFingerprint?
     var slots: [Slot]
-    var userInteractedSinceTrigger: Bool
     var alreadyPromptedForCurrentTopology: Bool
 }
 
@@ -144,7 +143,7 @@ enum AutoRestorePolicy {
             return .doNothing(reason: "layout is empty")
         }
 
-        if input.mode == .automatic, !input.userInteractedSinceTrigger {
+        if input.mode == .automatic {
             return .restore(layoutID: candidate.id, layoutName: candidate.name)
         }
 

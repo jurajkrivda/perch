@@ -7,8 +7,11 @@ This release improves automatic restore after login, wake, and display changes.
   be enabled and approved in macOS.
 - Restore waits for an unlocked session and settled displays, handles late
   wake notifications, and retries windows that running apps are still opening.
+- Automatic means no confirmation, even while typing, scrolling, or moving
+  the pointer. Ask remains the mode for approving each restore.
 - Changes to restore mode or saved layouts are checked again before windows
-  move. Keyboard or pointer activity makes Automatic mode ask first.
+  move. Switching an open offer to Automatic restores without a click;
+  switching to Off dismisses it.
 - Application launch requests have a timeout, so a missing system response
   cannot leave restore waiting indefinitely.
 - If saved layouts cannot be read, a persistent notice links to the preserved

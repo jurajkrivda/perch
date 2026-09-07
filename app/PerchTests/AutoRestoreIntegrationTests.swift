@@ -51,13 +51,32 @@ final class AutoRestoreIntegrationTests: XCTestCase {
         try await waitUntil { fixture.presentation.prompts.count == 1 }
     }
 
-    func testUserInteractionDowngradesAutomaticStartupToPrompt() async throws {
-        let fixture = try await AutoRestoreFixture(mode: .automatic)
+    func testPromptModeWaitsForConfirmationBeforeMovingWindows() async throws {
+        let fixture = try await AutoRestoreFixture(mode: .prompt)
         defer { fixture.stop() }
-        fixture.interacted = true
         fixture.start()
-        try await waitUntil { fixture.presentation.prompts.count == 1 }
+        try await waitUntil { fixture.presentation.currentPrompt != nil }
         XCTAssertEqual(fixture.presentation.restoreCount, 0)
+        let movesBeforeConfirmation = await fixture.mover.moves
+        XCTAssertEqual(movesBeforeConfirmation, 0)
+        fixture.presentation.currentPrompt?.onConfirm()
+        try await waitUntil { fixture.presentation.results.count == 1 }
+        XCTAssertEqual(fixture.presentation.results.first?.succeeded, 1)
+    }
+
+    func testSwitchingAnOpenPromptToAutomaticRestoresWithoutConfirmation() async throws {
+        let fixture = try await AutoRestoreFixture(mode: .prompt)
+        defer { fixture.stop() }
+        fixture.start()
+        try await waitUntil { fixture.presentation.currentPrompt != nil }
+        let oldPrompt = try XCTUnwrap(fixture.presentation.currentPrompt)
+        _ = try await fixture.engine.updateSettings { $0.autoRestoreMode = .automatic }
+        try await waitUntil { fixture.presentation.results.count == 1 }
+        XCTAssertNil(fixture.presentation.currentPrompt)
+        XCTAssertEqual(fixture.presentation.results.first?.succeeded, 1)
+        oldPrompt.onConfirm()
+        await Task.yield()
+        XCTAssertEqual(fixture.presentation.restoreCount, 1)
     }
 
     func testLateDisplayWaveReplacesUnconfirmedPromptForSameTopology() async throws {
@@ -72,6 +91,39 @@ final class AutoRestoreIntegrationTests: XCTestCase {
         XCTAssertEqual(fixture.presentation.restoreCount, 0)
         fixture.presentation.currentPrompt?.onConfirm()
         try await waitUntil { fixture.presentation.results.count == 1 }
+    }
+
+    func testSwitchingToAutomaticWhileLockedWaitsForUnlock() async throws {
+        let fixture = try await AutoRestoreFixture(mode: .prompt)
+        defer { fixture.stop() }
+        fixture.start()
+        try await waitUntil { fixture.presentation.currentPrompt != nil }
+        fixture.visible = false
+        fixture.distributedCenter.post(name: Notification.Name("com.apple.screenIsLocked"), object: nil)
+        try await waitUntil { fixture.presentation.currentPrompt == nil }
+        _ = try await fixture.engine.updateSettings { $0.autoRestoreMode = .automatic }
+        try await Task.sleep(for: .milliseconds(15))
+        XCTAssertEqual(fixture.presentation.restoreCount, 0)
+        fixture.visible = true
+        fixture.unlock()
+        try await waitUntil { fixture.presentation.results.count == 1 }
+        XCTAssertNil(fixture.presentation.currentPrompt)
+    }
+
+    func testSwitchingAnOpenPromptToAutomaticWaitsForChangedDisplaysToSettle() async throws {
+        let fixture = try await AutoRestoreFixture(mode: .prompt)
+        defer { fixture.stop() }
+        fixture.start()
+        try await waitUntil { fixture.presentation.currentPrompt != nil }
+        fixture.topology = DisplayTopologyFingerprint(entries: [
+            .init(uuid: "audit-display", bounds: CGRect(x: 0, y: 0, width: 1600, height: 1000), isMain: true)
+        ])
+        _ = try await fixture.engine.updateSettings { $0.autoRestoreMode = .automatic }
+        try await waitUntil { fixture.presentation.currentPrompt == nil }
+        XCTAssertEqual(fixture.presentation.restoreCount, 0)
+        fixture.applicationCenter.post(name: .perchDisplayDidReconfigure, object: nil)
+        try await waitUntil { fixture.presentation.results.count == 1 }
+        XCTAssertEqual(fixture.presentation.results.first?.succeeded, 1)
     }
 
     func testSleepHidesPromptAndDisplayCallbacksCannotReopenIt() async throws {
@@ -188,6 +240,7 @@ final class AutoRestoreIntegrationTests: XCTestCase {
         _ = try await fixture.engine.updateSettings { $0.autoRestoreMode = .off }
         try await waitUntil { fixture.presentation.currentPrompt == nil }
         XCTAssertEqual(fixture.presentation.restoreCount, 0)
+        XCTAssertEqual(fixture.presentation.lastDecision, .autoRestoreDecisionDisabled)
     }
 
     private func waitUntil(_ condition: @MainActor () -> Bool) async throws {
@@ -225,11 +278,10 @@ private final class AutoRestoreFixture {
     let engine: SlotEngine
     let mover = AuditWindowMover()
     let presentation: AuditAutoRestorePresentation
-    let topology = DisplayTopologyFingerprint(entries: [
+    var topology = DisplayTopologyFingerprint(entries: [
         .init(uuid: "audit-display", bounds: CGRect(x: 0, y: 0, width: 1440, height: 900), isMain: true)
     ])
     var visible: Bool? = true
-    var interacted = false
     var settleGate: AuditAsyncGate?
     var settleCount = 0
     var recordedSettleTimeouts: [TimeInterval] = []
@@ -255,7 +307,6 @@ private final class AutoRestoreFixture {
             slotEngine: engine,
             menuBarController: presentation,
             topologyProvider: { [weak self] in self?.topology },
-            interactionProvider: { [weak self] _ in self?.interacted ?? true },
             makeObserver: { [unowned self] timeout, triggered, visibility, settled in
                 EnvironmentChangeObserver(
                     settleTimeout: timeout, onTriggered: triggered,

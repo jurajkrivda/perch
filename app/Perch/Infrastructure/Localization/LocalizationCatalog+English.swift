@@ -5,7 +5,7 @@ extension LocalizationCatalog {
         .storeRecoveryShowFiles: "Show Preserved Files",
         .storeRecoveryDismiss: "Dismiss Notice",
         .applicationLaunchTimedOut: "The application did not finish starting in time. It may open later; try restoring again once it is ready.",
-        .autoRestoreAutomaticFooter: "Restores the most recently saved layout for the connected displays. If you have already used the keyboard or mouse, Perch asks first. Enable Launch at login to use this after a restart.",
+        .autoRestoreAutomaticFooter: "After unlocking and display settling, restores the most recently saved matching layout without confirmation, even while you use the keyboard or mouse. Enable Launch at login to use this after a restart.",
         .displaysChangedDuringSave: "Displays changed while saving. Wait for them to settle and save the layout again.",
         .aboutAccessibilityLabel: "Accessibility",
         .aboutDescriptionPrivacy: "Layouts stay on this Mac. Perch reads windows when saving and moves them for manual restores or when automatic restore is enabled.",

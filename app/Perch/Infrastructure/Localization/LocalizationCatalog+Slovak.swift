@@ -5,7 +5,7 @@ extension LocalizationCatalog {
         .storeRecoveryShowFiles: "Ukázať zachované súbory",
         .storeRecoveryDismiss: "Zavrieť upozornenie",
         .applicationLaunchTimedOut: "Aplikácia sa nestihla spustiť. Môže sa otvoriť neskôr; keď bude pripravená, skúste rozloženie obnoviť znova.",
-        .autoRestoreAutomaticFooter: "Obnoví naposledy uložené rozloženie pre pripojené displeje. Ak už používate klávesnicu alebo myš, Perch sa najprv opýta. Pre obnovu po reštarte zapnite Spúšťať pri prihlásení.",
+        .autoRestoreAutomaticFooter: "Po odomknutí a ustálení displejov obnoví naposledy uložené rozloženie bez potvrdenia, aj keď používate klávesnicu alebo myš. Pre obnovu po reštarte zapnite Spúšťať pri prihlásení.",
         .displaysChangedDuringSave: "Počas ukladania sa zmenili displeje. Počkajte na ich ustálenie a uložte rozloženie znova.",
         .aboutAccessibilityLabel: "Prístupnosť",
         .aboutDescriptionPrivacy: "Rozloženia zostávajú na tomto Macu. Perch číta okná pri ukladaní a presúva ich pri ručnom obnovení alebo keď je zapnuté automatické obnovenie.",

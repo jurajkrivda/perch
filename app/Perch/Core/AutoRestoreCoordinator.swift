@@ -1,4 +1,3 @@
-import CoreGraphics
 import Foundation
 
 private final class AutoRestoreNotificationTokenStore {
@@ -23,7 +22,6 @@ final class AutoRestoreCoordinator {
     private let slotEngine: SlotEngine
     let menuBarController: any AutoRestorePresenting
     private let topologyProvider: @MainActor () -> DisplayTopologyFingerprint?
-    private let interactionProvider: @MainActor (Date) -> Bool
     private let makeObserver: ObserverFactory
 
     typealias ObserverFactory = @MainActor (
@@ -55,9 +53,6 @@ final class AutoRestoreCoordinator {
         topologyProvider: @escaping @MainActor () -> DisplayTopologyFingerprint? = {
             DisplayManager.currentTopologyFingerprint()
         },
-        interactionProvider: @escaping @MainActor (Date) -> Bool = {
-            UserInteractionMonitor.interacted(since: $0)
-        },
         makeObserver: @escaping ObserverFactory = {
             EnvironmentChangeObserver(settleTimeout: $0, onTriggered: $1, onSessionVisibilityChanged: $2, onSettled: $3)
         }
@@ -65,7 +60,6 @@ final class AutoRestoreCoordinator {
         self.slotEngine = slotEngine
         self.menuBarController = menuBarController
         self.topologyProvider = topologyProvider
-        self.interactionProvider = interactionProvider
         self.makeObserver = makeObserver
     }
 
@@ -167,8 +161,7 @@ final class AutoRestoreCoordinator {
         triggerGeneration &+= 1
         _ = decisionContextState.begin(
             generation: triggerGeneration,
-            reason: reason,
-            triggerStartedAt: Date()
+            reason: reason
         )
         retryState.reset()
         incompleteTopologyRetryTask?.cancel()
@@ -224,23 +217,20 @@ final class AutoRestoreCoordinator {
         let generation = triggerGeneration
         let context = decisionContextState.begin(
             generation: generation,
-            reason: reason,
-            triggerStartedAt: Date()
+            reason: reason
         )
         decisionTask?.cancel()
         decisionTask = Task { @MainActor [weak self] in
             await self?.decideAfterEnvironmentSettled(
                 reason: context.reason,
-                generation: generation,
-                triggerStartedAt: context.triggerStartedAt
+                generation: generation
             )
         }
     }
 
     private func decideAfterEnvironmentSettled(
         reason: EnvironmentChangeReason,
-        generation: Int,
-        triggerStartedAt: Date
+        generation: Int
     ) async {
         guard isStarted,
               isSessionVisible,
@@ -278,8 +268,7 @@ final class AutoRestoreCoordinator {
             guard let currentTopology = currentTopology() else {
                 handleIncompleteTopology(
                     reason: reason,
-                    generation: generation,
-                    triggerStartedAt: triggerStartedAt
+                    generation: generation
                 )
                 return
             }
@@ -297,9 +286,6 @@ final class AutoRestoreCoordinator {
                 currentTopology: currentTopology,
                 topologyAtLastDecision: attemptState.topologyAtLastDecision,
                 slots: document.slots,
-                userInteractedSinceTrigger: userInteractedSinceTrigger(
-                    startedAt: triggerStartedAt
-                ),
                 alreadyPromptedForCurrentTopology: attemptState.alreadyPromptedForCurrentTopology
             ))
 
@@ -314,7 +300,6 @@ final class AutoRestoreCoordinator {
                 document: document,
                 currentTopology: currentTopology,
                 generation: generation,
-                triggerStartedAt: triggerStartedAt,
                 trigger: reason
             )
             guard shouldFinishDecision else { return }
@@ -334,8 +319,7 @@ final class AutoRestoreCoordinator {
 
     func handleIncompleteTopology(
         reason: EnvironmentChangeReason,
-        generation: Int,
-        triggerStartedAt: Date
+        generation: Int
     ) {
         guard retryState.claimRetry(for: generation) else {
             AppLog.display.warning(
@@ -361,15 +345,13 @@ final class AutoRestoreCoordinator {
         decisionTask = nil
         scheduleIncompleteTopologyRetry(
             reason: reason,
-            generation: generation,
-            triggerStartedAt: triggerStartedAt
+            generation: generation
         )
     }
 
     private func scheduleIncompleteTopologyRetry(
         reason: EnvironmentChangeReason,
-        generation: Int,
-        triggerStartedAt: Date
+        generation: Int
     ) {
         incompleteTopologyRetryTask?.cancel()
         incompleteTopologyRetryTask = Task { @MainActor [weak self] in
@@ -392,8 +374,7 @@ final class AutoRestoreCoordinator {
 
             await self.decideAfterEnvironmentSettled(
                 reason: reason,
-                generation: generation,
-                triggerStartedAt: triggerStartedAt
+                generation: generation
             )
         }
     }
@@ -411,8 +392,10 @@ final class AutoRestoreCoordinator {
     private func refreshSettings() async {
         do {
             let document = try await slotEngine.currentDocument()
+            guard isStarted else { return }
             settleTimeout = document.settings.autoRestoreSettleTimeout
             if document.settings.autoRestoreMode == .off, attemptState.pendingAttempt != nil {
+                let trigger = decisionContextState.context?.reason
                 _ = attemptState.invalidatePending()
                 if !automaticRestoreHasCommitted {
                     automaticRestoreTask?.cancel()
@@ -422,6 +405,24 @@ final class AutoRestoreCoordinator {
                 }
                 decisionContextState.reset()
                 menuBarController.invalidateRestorePrompt()
+                if let trigger {
+                    recordDecision(
+                        menuKey: .autoRestoreDecisionDisabled,
+                        diagnosticCode: "do-nothing:disabled", trigger: trigger
+                    )
+                }
+            } else if document.settings.autoRestoreMode == .automatic,
+                      let pending = attemptState.pendingAttempt, pending.kind == .prompt,
+                      let context = decisionContextState.context {
+                // A visible offer was already settled. Honor the newly selected
+                // mode and invalidate its old confirmation callback. A changed
+                // or hidden environment must settle again through the observer.
+                let canEvaluateNow = isSessionVisible && pending.generation == triggerGeneration &&
+                    attemptState.topologyAtLastDecision == currentTopology()
+                environmentTriggered(reason: context.reason)
+                if canEvaluateNow {
+                    environmentSettled(reason: context.reason)
+                }
             }
         } catch {
             AppLog.display.error(
@@ -456,9 +457,5 @@ final class AutoRestoreCoordinator {
 
     func currentTopology() -> DisplayTopologyFingerprint? {
         topologyProvider()
-    }
-
-    func userInteractedSinceTrigger(startedAt: Date) -> Bool {
-        interactionProvider(startedAt)
     }
 }

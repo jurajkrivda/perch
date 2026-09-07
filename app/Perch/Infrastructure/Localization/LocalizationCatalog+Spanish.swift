@@ -5,7 +5,7 @@ extension LocalizationCatalog {
         .storeRecoveryShowFiles: "Mostrar archivos conservados",
         .storeRecoveryDismiss: "Cerrar aviso",
         .applicationLaunchTimedOut: "La aplicación no terminó de iniciarse a tiempo. Puede abrirse más tarde; restaura el diseño de nuevo cuando esté lista.",
-        .autoRestoreAutomaticFooter: "Restaura el último diseño guardado para las pantallas conectadas. Si ya has usado el teclado o el ratón, Perch pregunta primero. Activa el inicio de sesión automático de Perch para restaurar después de reiniciar.",
+        .autoRestoreAutomaticFooter: "Tras desbloquear la sesión y estabilizarse las pantallas, restaura el último diseño compatible sin confirmación, incluso mientras usas el teclado o el ratón. Activa el inicio de Perch al iniciar sesión para restaurar después de reiniciar.",
         .displaysChangedDuringSave: "Las pantallas cambiaron mientras se guardaba. Espera a que se estabilicen y vuelve a guardar el diseño.",
         .aboutAccessibilityLabel: "Accesibilidad",
         .aboutDescriptionPrivacy: "Los diseños permanecen en este Mac. Perch lee las ventanas al guardar y las mueve en restauraciones manuales o cuando está activada la restauración automática.",

@@ -5,7 +5,7 @@ extension LocalizationCatalog {
         .storeRecoveryShowFiles: "Aufbewahrte Dateien anzeigen",
         .storeRecoveryDismiss: "Hinweis schließen",
         .applicationLaunchTimedOut: "Die Anwendung wurde nicht rechtzeitig gestartet. Sie kann sich später öffnen. Stellen Sie das Layout erneut her, sobald sie bereit ist.",
-        .autoRestoreAutomaticFooter: "Stellt das zuletzt gespeicherte Layout für die verbundenen Displays wieder her. Wenn du bereits Tastatur oder Maus benutzt hast, fragt Perch zuerst. Aktiviere den Start bei der Anmeldung für die Wiederherstellung nach einem Neustart.",
+        .autoRestoreAutomaticFooter: "Stellt nach dem Entsperren und der Stabilisierung der Displays das zuletzt gespeicherte passende Layout ohne Bestätigung wieder her, auch während du Tastatur oder Maus benutzt. Aktiviere den Start bei der Anmeldung für die Wiederherstellung nach einem Neustart.",
         .displaysChangedDuringSave: "Die Displays haben sich beim Speichern geändert. Warte, bis sie bereit sind, und speichere das Layout erneut.",
         .aboutAccessibilityLabel: "Bedienungshilfen",
         .aboutDescriptionPrivacy: "Layouts bleiben auf diesem Mac. Perch liest Fenster beim Speichern und verschiebt sie bei manuellen Wiederherstellungen oder wenn die automatische Wiederherstellung aktiviert ist.",

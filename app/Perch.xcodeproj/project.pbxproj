@@ -70,7 +70,6 @@
 		4E0098644F983E28EE388CEA /* LaunchAtLogin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C261CCBD5806F97CADB5C57 /* LaunchAtLogin.swift */; };
 		5219FAC23A7D441E9271BACF /* SlotEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B1989562791F5FE2E2A9B57 /* SlotEngineTests.swift */; };
 		57DA325700DED0494EEED77E /* SlotStoreFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FB56DE99F0E8F9645846582 /* SlotStoreFixtures.swift */; };
-		58353BCB9322969FA5BC2DFE /* UserInteractionMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 603EC44C43232CA32774AB75 /* UserInteractionMonitor.swift */; };
 		587EC57DCFB52E3FA5E66673 /* LayoutWindowRestorer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6842EB9C4528AD9E5C800743 /* LayoutWindowRestorer.swift */; };
 		58E17C317A0A2CF4E4BEA39B /* WindowMoveTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B9F3775485A1EC065EF65DA /* WindowMoveTypes.swift */; };
 		5A39A110213C78DA3E71FFB6 /* AccessibilityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31CB4D732D06D62E7BF4EE2A /* AccessibilityManager.swift */; };
@@ -174,7 +173,6 @@
 		ECC941960E4DD205DF4924BD /* LocalizationCatalog+Spanish.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC248C65D602CF649644B412 /* LocalizationCatalog+Spanish.swift */; };
 		EE6F30672244739F048DCF73 /* WindowMover+FrameWriting.swift in Sources */ = {isa = PBXBuildFile; fileRef = F94A1F5805FF83A38CD0060F /* WindowMover+FrameWriting.swift */; };
 		EF90281164912A0F6ABD5FE2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFD7EF5256C9B63877919B58 /* SettingsView.swift */; };
-		F03B3A12E9D302D49CE2556E /* UserInteractionMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 603EC44C43232CA32774AB75 /* UserInteractionMonitor.swift */; };
 		F1099DE4BEF11E7C51979CCF /* ProcessFileLock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80D1D80E3C8092A802BAD056 /* ProcessFileLock.swift */; };
 		F29D9E73F33D2E72FEE93946 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1BE72FB3D6E204849876318 /* HotkeyManager.swift */; };
 		F5EDD8CCDDD576C2FB41715C /* LaunchAtLogin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C261CCBD5806F97CADB5C57 /* LaunchAtLogin.swift */; };
@@ -235,7 +233,6 @@
 		5E8396661817C2C00CF98848 /* WindowSnapshotter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowSnapshotter.swift; sourceTree = "<group>"; };
 		5F55032ABA8DCE709D703220 /* DisplayStabilizerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayStabilizerTests.swift; sourceTree = "<group>"; };
 		5F9E8CBC8C80D5DE5148AC46 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		603EC44C43232CA32774AB75 /* UserInteractionMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserInteractionMonitor.swift; sourceTree = "<group>"; };
 		66BFF1D22C5F9F6E0F916F1A /* AutoRestoreAttemptStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoRestoreAttemptStateTests.swift; sourceTree = "<group>"; };
 		6842EB9C4528AD9E5C800743 /* LayoutWindowRestorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutWindowRestorer.swift; sourceTree = "<group>"; };
 		6AEF18B365F75A1C73A671B9 /* CGWindowCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CGWindowCatalog.swift; sourceTree = "<group>"; };
@@ -435,7 +432,6 @@
 				F67BB4DB668B517E7372231F /* RestoreReportBuilder.swift */,
 				1F66A23BB0E6596FBFF8C9F1 /* SlotEngine.swift */,
 				769CB1248C23549532CEEEBD /* SlotEngineError.swift */,
-				603EC44C43232CA32774AB75 /* UserInteractionMonitor.swift */,
 				0E64BD8641B7910AFFA92675 /* WindowGeometry.swift */,
 				800D1D6DF0D9F9EDBE1A9A70 /* WindowMatcher.swift */,
 				BDC90B258C27972E8D543DCC /* WindowMover.swift */,
@@ -717,7 +713,6 @@
 				1058E42E3D966B81264ECD1C /* StoreRecoveryTests.swift in Sources */,
 				97472A409E442A020A067A18 /* ToastWindow.swift in Sources */,
 				09C8CB77B8E8BEA08B1644B5 /* UpdaterController.swift in Sources */,
-				F03B3A12E9D302D49CE2556E /* UserInteractionMonitor.swift in Sources */,
 				1C214884267FF0F4B10A439D /* WindowGeometry.swift in Sources */,
 				DD3733D511254A11E6361B4C /* WindowGeometryTests.swift in Sources */,
 				A21639DF389743BA75486D22 /* WindowMatcher.swift in Sources */,
@@ -802,7 +797,6 @@
 				BEBF493DDF63C203C66A16C2 /* StoreRecoveryFiles.swift in Sources */,
 				DCEAC9A33567FAE64B9EFD87 /* ToastWindow.swift in Sources */,
 				26F07FFA773C6FEA21A04E4C /* UpdaterController.swift in Sources */,
-				58353BCB9322969FA5BC2DFE /* UserInteractionMonitor.swift in Sources */,
 				1B7A160B39A4870CF82299F1 /* WindowGeometry.swift in Sources */,
 				1F04D2D4486F661452659647 /* WindowMatcher.swift in Sources */,
 				58E17C317A0A2CF4E4BEA39B /* WindowMoveTypes.swift in Sources */,

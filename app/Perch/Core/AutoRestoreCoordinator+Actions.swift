@@ -8,7 +8,6 @@ extension AutoRestoreCoordinator {
         document: SlotStoreDocument,
         currentTopology: DisplayTopologyFingerprint,
         generation: Int,
-        triggerStartedAt: Date,
         trigger: EnvironmentChangeReason
     ) -> Bool {
         switch decision {
@@ -36,7 +35,6 @@ extension AutoRestoreCoordinator {
                 shortcutDescription: shortcut,
                 expectedTopology: currentTopology,
                 generation: generation,
-                triggerStartedAt: triggerStartedAt,
                 trigger: trigger
             )
 
@@ -64,7 +62,6 @@ extension AutoRestoreCoordinator {
                         shortcutDescription: shortcut,
                         expectedTopology: currentTopology,
                         generation: generation,
-                        triggerStartedAt: triggerStartedAt,
                         trigger: trigger
                     ) ?? false
                 }
@@ -202,7 +199,6 @@ extension AutoRestoreCoordinator {
         shortcutDescription: String?,
         expectedTopology: DisplayTopologyFingerprint,
         generation: Int,
-        triggerStartedAt: Date,
         trigger: EnvironmentChangeReason
     ) -> Bool {
         guard document.settings.autoRestoreMode != .off,
@@ -220,8 +216,7 @@ extension AutoRestoreCoordinator {
             return false
         }
 
-        guard document.settings.autoRestoreMode == .automatic,
-              !userInteractedSinceTrigger(startedAt: triggerStartedAt) else {
+        guard document.settings.autoRestoreMode == .automatic else {
             guard attemptState.downgradeToPrompt(attemptID) else { return false }
             _ = showRestorePrompt(
                 attemptID: attemptID,
@@ -230,7 +225,6 @@ extension AutoRestoreCoordinator {
                 shortcutDescription: shortcutDescription,
                 expectedTopology: expectedTopology,
                 generation: generation,
-                triggerStartedAt: triggerStartedAt,
                 trigger: trigger
             )
             return false
@@ -249,7 +243,6 @@ extension AutoRestoreCoordinator {
         shortcutDescription: String?,
         expectedTopology: DisplayTopologyFingerprint,
         generation: Int,
-        triggerStartedAt: Date,
         trigger: EnvironmentChangeReason
     ) -> Bool {
         guard attemptState.isPending(attemptID, kind: .prompt) else { return true }
@@ -293,8 +286,7 @@ extension AutoRestoreCoordinator {
             )
             handleIncompleteTopology(
                 reason: trigger,
-                generation: generation,
-                triggerStartedAt: triggerStartedAt
+                generation: generation
             )
             return false
         }
